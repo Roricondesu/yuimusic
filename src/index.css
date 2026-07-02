@@ -1,0 +1,239 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* solid light theme */
+  --bg-base: #e8eaef;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-elevated: rgba(255, 255, 255, 0.88);
+  --border: rgba(0, 0, 0, 0.06);
+  --text-primary: rgba(0, 0, 0, 0.86);
+  --text-secondary: rgba(0, 0, 0, 0.48);
+  /* accent 由 JS 动态注入 */
+  --accent: #0a84ff;
+  --accent-soft: rgba(10, 132, 255, 0.14);
+  --accent-strong: rgba(10, 132, 255, 0.28);
+}
+
+html.dark {
+  --bg-base: #09090c;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-elevated: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.07);
+  --text-primary: rgba(255, 255, 255, 0.88);
+  --text-secondary: rgba(255, 255, 255, 0.48);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text-primary);
+  background: var(--bg-base);
+  overflow-x: hidden;
+}
+
+/* page shell gives room for top nav and floating bottom player */
+.page-shell {
+  min-height: 100%;
+  padding: 72px 16px calc(140px + env(safe-area-inset-bottom, 0px)) 16px;
+}
+
+@media (min-width: 768px) {
+  .page-shell {
+    padding: 88px 24px calc(152px + env(safe-area-inset-bottom, 0px)) 24px;
+  }
+}
+
+/* staggered page entrance */
+@keyframes stagger-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-enter {
+  animation: stagger-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-enter-1 { animation-delay: 0.04s; }
+.animate-enter-2 { animation-delay: 0.1s; }
+.animate-enter-3 { animation-delay: 0.18s; }
+.animate-enter-4 { animation-delay: 0.26s; }
+.animate-enter-5 { animation-delay: 0.34s; }
+
+/* === 页面切换动画 === */
+@keyframes page-fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.page-transition {
+  animation: page-fade-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* === NowPlaying 滑入动画（从底部上滑 + 缩放） === */
+@keyframes nowplaying-enter {
+  from {
+    opacity: 0;
+    transform: translateY(100%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes nowplaying-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(100%) scale(0.96);
+  }
+}
+
+.nowplaying-enter {
+  animation: nowplaying-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.nowplaying-exit {
+  animation: nowplaying-exit 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+/* === 歌单详情滑入 === */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.slide-in-right {
+  animation: slide-in-right 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* album art rotation when playing */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* utility for mac-glass sliders / switches */
+.mac-glass-control {
+  touch-action: pan-y;
+}
+
+/* 全局隐藏所有滚动条 */
+*::-webkit-scrollbar {
+  display: none;
+}
+* {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* custom scrollbar for horizontal carousels */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* solid card style for non-glass panels — 普通卡片，无假玻璃效果 */
+.solid-card {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+}
+
+html.dark .solid-card {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+/* 鼠标跟随边缘高光 —— 用于歌曲卡片 */
+.glow-card {
+  --mouse-x: 50%;
+  --mouse-y: 50%;
+  position: relative;
+  overflow: hidden;
+}
+
+.glow-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  padding: 1.5px;
+  background: radial-gradient(
+    420px circle at var(--mouse-x) var(--mouse-y),
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.18) 40%,
+    transparent 70%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+html.dark .glow-card::before {
+  background: radial-gradient(
+    420px circle at var(--mouse-x) var(--mouse-y),
+    rgba(255, 255, 255, 0.4),
+    rgba(255, 255, 255, 0.12) 40%,
+    transparent 70%
+  );
+}
+
+.glow-card.glow-active::before {
+  opacity: 1;
+}
+
+/* === 歌词动画修复 === */
+/* 用 transform 缩放代替 fontSize 变化，避免 reflow 跳动 */
+.lyric-line {
+  transition: color 0.35s ease, opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+  transform-origin: center;
+}
+
+.lyric-active {
+  transform: scale(1.04);
+}
+
+.lyric-inactive {
+  transform: scale(1);
+}
+
+/* 平滑滚动（歌词容器） */
+.lyric-scroll {
+  scroll-behavior: smooth;
+}
+
+
