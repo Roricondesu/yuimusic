@@ -124,6 +124,28 @@ function LyricList({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [lyrics, scrollRef]);
 
+  // 容器（重新）挂载后，立即定位到当前歌词，避免切换页面时停在顶部
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    // 等 DOM 稳定后定位
+    const raf = requestAnimationFrame(() => {
+      const container = scrollRef.current;
+      if (!container) return;
+      const targetIdx = currentIndex < 0 ? 0 : currentIndex;
+      const el = container.querySelector(
+        `[data-idx="${targetIdx}"]`,
+      ) as HTMLElement | null;
+      if (!el) return;
+      const target =
+        el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
+      container.scrollTop = Math.max(0, target);
+      lastIdxRef.current = targetIdx;
+    });
+    return () => cancelAnimationFrame(raf);
+    // 仅在挂载时执行一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -1033,17 +1055,11 @@ export default function NowPlaying() {
           </div>
         </div>
 
-        {/* 移动端：横向滑动双页 */}
+        {/* 移动端：条件渲染双页（封面/歌词），可靠的高度计算 */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:hidden">
-          <div
-            className="flex min-h-0 flex-1 overflow-hidden transition-transform duration-500 ease-out"
-            style={{
-              transform: `translateX(${mobilePage === 0 ? "0%" : "-100%"})`,
-              transitionTimingFunction: "var(--ease-silk)",
-            }}
-          >
-            {/* 封面页 */}
-            <div className="flex w-full shrink-0 flex-col items-center justify-center gap-3 overflow-hidden">
+          {/* 封面页 */}
+          {mobilePage === 0 && (
+            <div className="sheet-enter flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-hidden">
               <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
 
               <div className="flex w-full max-w-sm flex-col items-center gap-1">
@@ -1096,18 +1112,18 @@ export default function NowPlaying() {
                   </button>
                 </div>
 
-                {mobilePage === 0 && (
-                  <div className="mt-2 flex items-center gap-1 text-xs" style={{ color: "var(--text-secondary)" }}>
-                    <ChevronLeft size={12} />
-                    <span>左滑查看歌词</span>
-                  </div>
-                )}
+                <div className="mt-2 flex items-center gap-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  <ChevronLeft size={12} />
+                  <span>左滑查看歌词</span>
+                </div>
               </div>
             </div>
+          )}
 
-            {/* 歌词页 */}
-            <div className="flex h-full w-full shrink-0 flex-col overflow-hidden pl-3 min-h-0">
-              <div className="mb-2 flex items-center justify-between">
+          {/* 歌词页 */}
+          {mobilePage === 1 && (
+            <div className="sheet-enter flex h-full min-h-0 flex-col overflow-hidden pl-3">
+              <div className="mb-2 flex shrink-0 items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
                   歌词
                 </span>
@@ -1121,7 +1137,7 @@ export default function NowPlaying() {
               </div>
               <LyricList {...lyricProps} scrollRef={lyricScrollRefMobile} />
             </div>
-          </div>
+          )}
 
           {/* 页面指示器 */}
           <div className="mt-2 flex shrink-0 justify-center gap-2">
