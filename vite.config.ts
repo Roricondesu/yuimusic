@@ -63,7 +63,7 @@ const neteaseProxyPlugin = (): Plugin => ({
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/yuimusic/',
+  base: './',
   build: {
     sourcemap: 'hidden',
   },
