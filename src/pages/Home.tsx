@@ -339,7 +339,7 @@ export default function Home() {
                   className="text-2xl font-bold tracking-tight md:text-3xl"
                   style={{ color: "var(--text-primary)" }}
                 >
-                  {recs.featured?.title ?? "Liquid Music"}
+                  {recs.featured?.title ?? "YUIMUSIC"}
                 </h1>
                 <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                   {recs.featured
