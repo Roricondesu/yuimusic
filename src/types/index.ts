@@ -100,6 +100,10 @@ export interface AppSettings {
   lyricFontFamily: "system" | "serif" | "mono";
   /** 歌词滚动是否使用回弹动画（接近焦点时减速回弹） */
   lyricBounceScroll: boolean;
+  /** 歌词字距 */
+  lyricLetterSpacing: "compact" | "normal" | "loose";
+  /** 歌词行高 */
+  lyricLineHeight: "tight" | "normal" | "relaxed";
   /** 单声道音频 */
   monoAudio: boolean;
   /** 默认搜索词（空则 pop） */

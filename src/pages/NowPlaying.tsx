@@ -31,6 +31,8 @@ function LyricList({
   isDark,
   align,
   bounceScroll,
+  letterSpacing,
+  lineHeight,
   scrollRef,
   onSeek,
   duration,
@@ -46,6 +48,8 @@ function LyricList({
   isDark: boolean;
   align: "left" | "center" | "right";
   bounceScroll: boolean;
+  letterSpacing: "compact" | "normal" | "loose";
+  lineHeight: "tight" | "normal" | "relaxed";
   scrollRef: React.RefObject<HTMLDivElement>;
   onSeek: (p: number) => void;
   duration: number;
@@ -91,12 +95,14 @@ function LyricList({
 
   useEffect(() => {
     const container = scrollRef.current;
-    if (!container || currentIndex < 0) return;
-    if (lastIdxRef.current === currentIndex) return;
-    lastIdxRef.current = currentIndex;
+    if (!container) return;
+    // 歌曲开始时 currentIndex 可能为 -1，此时将第一行居中预览
+    const targetIdx = currentIndex < 0 ? 0 : currentIndex;
+    if (lastIdxRef.current === targetIdx) return;
+    lastIdxRef.current = targetIdx;
 
     const el = container.querySelector(
-      `[data-idx="${currentIndex}"]`,
+      `[data-idx="${targetIdx}"]`,
     ) as HTMLElement | null;
     if (!el) return;
 
@@ -140,6 +146,9 @@ function LyricList({
             ? "rgba(255,255,255,0.32)"
             : "rgba(0,0,0,0.32)";
 
+      const ls =
+        letterSpacing === "compact" ? "0em" : letterSpacing === "loose" ? "0.06em" : "0.02em";
+
       // 焦点行永远不模糊、不透明
       if (active) {
         return {
@@ -147,7 +156,7 @@ function LyricList({
           fontWeight: 700,
           color: baseColor,
           transform: "scale(1.02)",
-          letterSpacing: "0.01em",
+          letterSpacing: ls,
           filter: "none",
           opacity: 1,
         };
@@ -158,7 +167,7 @@ function LyricList({
           fontWeight,
           color: baseColor,
           transform: "scale(1)",
-          letterSpacing: "0.02em",
+          letterSpacing: ls,
         };
       }
       if (effect === "fade") {
@@ -168,7 +177,7 @@ function LyricList({
           color: baseColor,
           opacity: Math.max(0.2, 1 - dist * 0.2),
           transform: "scale(1)",
-          letterSpacing: "0.02em",
+          letterSpacing: ls,
           filter: "none",
         };
       }
@@ -180,10 +189,10 @@ function LyricList({
         opacity: Math.max(0.3, 1 - dist * 0.08),
         filter: `blur(${Math.min(3, dist * 0.5)}px)`,
         transform: "scale(1)",
-        letterSpacing: "0.02em",
+        letterSpacing: ls,
       };
     },
-    [currentIndex, fontSize, fontWeight, effect, isDark],
+    [currentIndex, fontSize, fontWeight, effect, isDark, letterSpacing],
   );
 
   const alignClass =
@@ -194,6 +203,11 @@ function LyricList({
         : "items-center text-center";
 
   const padSide = align === "left" ? "0 0.5rem 0 1.25rem" : align === "right" ? "0 1.25rem 0 0.5rem" : undefined;
+
+  const lhValue =
+    lineHeight === "tight" ? 1.35 : lineHeight === "relaxed" ? 2.0 : 1.6;
+  const gapValue =
+    lineHeight === "tight" ? "0.05em" : lineHeight === "relaxed" ? "0.3em" : "0.15em";
 
   return (
     <div
@@ -220,8 +234,14 @@ function LyricList({
         </div>
       ) : (
         <div
-          className={`flex flex-col py-12 ${alignClass}`}
-          style={{ fontFamily, gap: "0.15em" }}
+          className={`flex flex-col ${alignClass}`}
+          style={{
+            fontFamily,
+            gap: gapValue,
+            // 首尾留出半屏空间，使第一行/最后一行也能滚到容器中心
+            paddingTop: "45%",
+            paddingBottom: "45%",
+          }}
         >
           {lyrics.map((line, i) => {
             const active = i === currentIndex;
@@ -229,9 +249,10 @@ function LyricList({
               <p
                 key={i}
                 data-idx={i}
-                className={`lyric-line cursor-pointer leading-relaxed transition-[color,opacity,filter,transform,font-size,letter-spacing] duration-500 ${active ? "lyric-focus" : ""}`}
+                className={`lyric-line cursor-pointer transition-[color,opacity,filter,transform,font-size,letter-spacing] duration-500 ${active ? "lyric-focus" : ""}`}
                 style={{
                   ...itemStyle(i),
+                  lineHeight: lhValue,
                   maxWidth: align === "center" ? "92%" : "100%",
                   padding: padSide,
                   margin: align === "center" ? "0 auto" : undefined,
@@ -567,6 +588,54 @@ function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* 字距 */}
+        <div className="mb-4">
+          <div style={labelStyle}>字距</div>
+          <div className="flex gap-2">
+            {([
+              { key: "compact", label: "紧凑", ls: "0em" },
+              { key: "normal", label: "标准", ls: "0.02em" },
+              { key: "loose", label: "宽松", ls: "0.06em" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricLetterSpacing", opt.key)}
+                style={{
+                  ...iconBtn(settings.lyricLetterSpacing === opt.key),
+                  letterSpacing: opt.ls,
+                }}
+                className="flex-1 py-2.5 text-sm font-medium"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 行高 */}
+        <div className="mb-4">
+          <div style={labelStyle}>行高</div>
+          <div className="flex gap-2">
+            {([
+              { key: "tight", label: "紧凑", lh: 1.35 },
+              { key: "normal", label: "标准", lh: 1.6 },
+              { key: "relaxed", label: "宽松", lh: 2.0 },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricLineHeight", opt.key)}
+                style={{
+                  ...iconBtn(settings.lyricLineHeight === opt.key),
+                  lineHeight: opt.lh,
+                }}
+                className="flex-1 py-2.5 text-sm font-medium"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 回弹滚动开关 */}
         <div className="flex items-center justify-between rounded-xl px-3 py-3" style={{ background: "var(--surface-elevated)" }}>
           <div className="flex flex-col">
@@ -622,6 +691,8 @@ export default function NowPlaying() {
   const lyricWeight = useAppStore((s) => s.settings.lyricWeight);
   const lyricFontFamily = useAppStore((s) => s.settings.lyricFontFamily);
   const lyricBounceScroll = useAppStore((s) => s.settings.lyricBounceScroll);
+  const lyricLetterSpacing = useAppStore((s) => s.settings.lyricLetterSpacing);
+  const lyricLineHeight = useAppStore((s) => s.settings.lyricLineHeight);
   const reduceMotion = useAppStore((s) => s.settings.reduceMotion);
   const lyrics = useAppStore((s) => s.player.lyrics);
   const lyricsLoading = useAppStore((s) => s.player.lyricsLoading);
@@ -775,6 +846,8 @@ export default function NowPlaying() {
     isDark,
     align: lyricAlign,
     bounceScroll: lyricBounceScroll,
+    letterSpacing: lyricLetterSpacing,
+    lineHeight: lyricLineHeight,
     onSeek: useAppStore.getState().seekTo,
     duration: currentTrack.duration,
     reduceMotion,
@@ -963,7 +1036,7 @@ export default function NowPlaying() {
         {/* 移动端：横向滑动双页 */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:hidden">
           <div
-            className="flex flex-1 overflow-hidden transition-transform duration-500 ease-out"
+            className="flex min-h-0 flex-1 overflow-hidden transition-transform duration-500 ease-out"
             style={{
               transform: `translateX(${mobilePage === 0 ? "0%" : "-100%"})`,
               transitionTimingFunction: "var(--ease-silk)",
@@ -1033,7 +1106,7 @@ export default function NowPlaying() {
             </div>
 
             {/* 歌词页 */}
-            <div className="flex w-full shrink-0 flex-col overflow-hidden pl-3">
+            <div className="flex h-full w-full shrink-0 flex-col overflow-hidden pl-3 min-h-0">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
                   歌词
