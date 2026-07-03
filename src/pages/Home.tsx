@@ -81,12 +81,12 @@ function CardRow({
         <button
           key={track.id}
           onClick={() => onPlay(track)}
-          className="solid-card group shrink-0 text-left transition-transform hover:-translate-y-1 active:scale-[0.98]"
+          className="solid-card lift-silk group shrink-0 text-left"
           style={{
             border: "none",
             padding: 0,
             width: 156,
-            animation: `stagger-fade-up 0.55s cubic-bezier(0.22,1,0.36,1) both`,
+            animation: `stagger-fade-up 0.65s var(--ease-silk) both`,
             animationDelay: `${0.08 + i * 0.04}s`,
           }}
         >
@@ -440,7 +440,7 @@ export default function Home() {
                       setActiveTab("playlists");
                       setOpenPlaylist(pl.id);
                     }}
-                    className="solid-card group shrink-0 text-left transition-transform hover:-translate-y-1"
+                    className="solid-card lift-silk group shrink-0 text-left"
                     style={{ width: 130, padding: 0, border: "none" }}
                   >
                     <div
@@ -604,7 +604,7 @@ export default function Home() {
                 <button
                   key={genre}
                   onClick={() => playGenre(genre)}
-                  className="rounded-full px-4 py-2 text-sm font-medium transition-transform active:scale-95"
+                  className="press-silk rounded-full px-4 py-2 text-sm font-medium"
                   style={{
                     border: "1px solid var(--border)",
                     background: "var(--surface)",
@@ -626,7 +626,7 @@ export default function Home() {
                 <button
                   key={mood}
                   onClick={() => playMood(mood)}
-                  className="rounded-full px-4 py-2 text-sm font-medium transition-transform active:scale-95"
+                  className="press-silk rounded-full px-4 py-2 text-sm font-medium"
                   style={{
                     border: "1px solid var(--border)",
                     background: "var(--surface)",

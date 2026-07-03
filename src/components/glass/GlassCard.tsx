@@ -54,7 +54,7 @@ export const GlassCard: React.FC<GlassCardProps> = ({
           : "rgba(255,255,255,0.22)",
         boxShadow:
           "inset 0 1px 0 rgba(255,255,255,0.22), 0 14px 38px rgba(0,0,0,0.14), 0 3px 8px rgba(0,0,0,0.08)",
-        transition: "transform 0.25s ease, box-shadow 0.25s ease",
+        transition: "transform 0.4s var(--ease-silk), box-shadow 0.4s var(--ease-silk)",
         ...style,
       }}
       {...rest}

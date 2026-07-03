@@ -256,12 +256,12 @@ function QueuePanel({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col"
+      className="overlay-fade absolute inset-0 z-30 flex flex-col"
       style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
       onClick={onClose}
     >
       <div
-        className="mb-28 mt-auto max-h-[60%] overflow-hidden rounded-t-3xl md:mb-24"
+        className="sheet-enter mb-28 mt-auto max-h-[60%] overflow-hidden rounded-t-3xl md:mb-24"
         style={{ background: "var(--surface)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -348,12 +348,12 @@ function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col"
+      className="overlay-fade absolute inset-0 z-30 flex flex-col"
       style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
       onClick={onClose}
     >
       <div
-        className="mb-28 mt-auto max-h-[85vh] overflow-y-auto rounded-t-3xl p-5 md:mb-24"
+        className="sheet-enter mb-28 mt-auto max-h-[85vh] overflow-y-auto rounded-t-3xl p-5 md:mb-24"
         style={{ background: "var(--surface)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -556,7 +556,8 @@ export default function NowPlaying() {
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      transition: "color 0.15s ease, transform 0.15s ease",
+      transition: "color 0.2s ease, transform 0.28s var(--ease-out-back)",
+      willChange: "transform",
     }),
     [isDark],
   );
@@ -657,7 +658,7 @@ export default function NowPlaying() {
           onClick={() => removeDownloadedTrack(currentTrack.id)}
           style={iconBtn(true)}
           aria-label="已下载，点击删除"
-          className="hover:scale-110"
+          className="press-silk"
         >
           <Check size={size} />
         </button>
@@ -675,7 +676,7 @@ export default function NowPlaying() {
         onClick={handleDownload}
         style={iconBtn()}
         aria-label="下载"
-        className="hover:scale-110"
+        className="press-silk"
       >
         <Download size={size} />
       </button>
@@ -718,7 +719,7 @@ export default function NowPlaying() {
           onClick={() => setShowNowPlaying(false)}
           style={iconBtn()}
           aria-label="收起"
-          className="hover:scale-110"
+          className="press-silk"
         >
           <ChevronDown size={24} />
         </button>
@@ -741,7 +742,7 @@ export default function NowPlaying() {
           onClick={() => setShowQueue(true)}
           style={iconBtn()}
           aria-label="播放队列"
-          className="hover:scale-110"
+          className="press-silk"
         >
           <ListMusic size={22} />
         </button>
@@ -792,7 +793,7 @@ export default function NowPlaying() {
                   onClick={() => toggleFavorite(currentTrack)}
                   style={iconBtn(liked)}
                   aria-label="收藏"
-                  className="hover:scale-110"
+                  className="press-silk"
                 >
                   <Heart size={22} fill={liked ? "currentColor" : "none"} />
                 </button>
@@ -801,7 +802,7 @@ export default function NowPlaying() {
                   onClick={() => setShowLyricSettings(true)}
                   style={iconBtn()}
                   aria-label="歌词样式"
-                  className="hover:scale-110"
+                  className="press-silk"
                 >
                   <Type size={20} />
                 </button>
@@ -833,9 +834,10 @@ export default function NowPlaying() {
         {/* 移动端：横向滑动双页 */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:hidden">
           <div
-            className="flex flex-1 overflow-hidden transition-transform duration-300 ease-out"
+            className="flex flex-1 overflow-hidden transition-transform duration-500 ease-out"
             style={{
               transform: `translateX(${mobilePage === 0 ? "0%" : "-100%"})`,
+              transitionTimingFunction: "var(--ease-silk)",
             }}
           >
             {/* 封面页 */}
@@ -877,7 +879,7 @@ export default function NowPlaying() {
                     onClick={() => toggleFavorite(currentTrack)}
                     style={iconBtn(liked)}
                     aria-label="收藏"
-                    className="hover:scale-110"
+                    className="press-silk"
                   >
                     <Heart size={20} fill={liked ? "currentColor" : "none"} />
                   </button>
@@ -886,7 +888,7 @@ export default function NowPlaying() {
                     onClick={() => setShowLyricSettings(true)}
                     style={iconBtn()}
                     aria-label="歌词样式"
-                    className="hover:scale-110"
+                    className="press-silk"
                   >
                     <Type size={18} />
                   </button>

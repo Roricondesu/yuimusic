@@ -69,7 +69,8 @@ export const BottomPlayer: React.FC = () => {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    transition: "background 0.15s ease, color 0.15s ease, transform 0.15s ease",
+    transition: "background 0.2s ease, color 0.2s ease, transform 0.28s var(--ease-out-back)",
+    willChange: "transform",
   });
 
   const handleAddToPlaylist = (playlistId: string) => {
@@ -264,10 +265,11 @@ export const BottomPlayer: React.FC = () => {
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    transition: "transform 0.15s ease",
+                    transition: "transform 0.3s var(--ease-out-back), box-shadow 0.2s ease",
                     boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                    willChange: "transform",
                   }}
-                  className="hover:scale-105"
+                  className="press-silk"
                 >
                   {isPlaying ? (
                     <Pause size={20} fill="currentColor" />
@@ -425,7 +427,10 @@ export const BottomPlayer: React.FC = () => {
                       alignItems: "center",
                       justifyContent: "center",
                       boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                      transition: "transform 0.3s var(--ease-out-back)",
+                      willChange: "transform",
                     }}
+                    className="press-silk"
                   >
                     {isPlaying ? (
                       <Pause size={18} fill="currentColor" />

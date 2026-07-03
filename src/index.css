@@ -22,6 +22,16 @@
   --accent: #0a84ff;
   --accent-soft: rgba(10, 132, 255, 0.14);
   --accent-strong: rgba(10, 132, 255, 0.28);
+
+  /* === 丝滑缓动曲线 === */
+  /* 主力曲线：指数级减速，自然收尾 */
+  --ease-silk: cubic-bezier(0.16, 1, 0.3, 1);
+  /* 进入用：带轻微回弹感 */
+  --ease-out-back: cubic-bezier(0.34, 1.3, 0.64, 1);
+  /* 退出用：先慢后快 */
+  --ease-in-soft: cubic-bezier(0.4, 0, 1, 1);
+  /* 进出对称 */
+  --ease-in-out-silk: cubic-bezier(0.65, 0, 0.35, 1);
 }
 
 html.dark {
@@ -62,7 +72,7 @@ body {
 @keyframes stagger-fade-up {
   from {
     opacity: 0;
-    transform: translateY(18px) scale(0.985);
+    transform: translateY(14px) scale(0.99);
   }
   to {
     opacity: 1;
@@ -71,34 +81,39 @@ body {
 }
 
 .animate-enter {
-  animation: stagger-fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: stagger-fade-up 0.7s var(--ease-silk) both;
 }
 
-.animate-enter-1 { animation-delay: 0.04s; }
-.animate-enter-2 { animation-delay: 0.1s; }
-.animate-enter-3 { animation-delay: 0.18s; }
-.animate-enter-4 { animation-delay: 0.26s; }
-.animate-enter-5 { animation-delay: 0.34s; }
+.animate-enter-1 { animation-delay: 0.05s; }
+.animate-enter-2 { animation-delay: 0.12s; }
+.animate-enter-3 { animation-delay: 0.2s; }
+.animate-enter-4 { animation-delay: 0.28s; }
+.animate-enter-5 { animation-delay: 0.36s; }
 
 /* === 页面切换动画 === */
 @keyframes page-fade-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(10px) scale(0.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 .page-transition {
-  animation: page-fade-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: page-fade-in 0.42s var(--ease-silk) both;
 }
 
-/* === NowPlaying 滑入动画（从底部上滑 + 缩放） === */
+/* === NowPlaying 滑入动画（从底部上滑 + 缩放 + 模糊） === */
 @keyframes nowplaying-enter {
   from {
     opacity: 0;
-    transform: translateY(100%) scale(0.96);
+    transform: translateY(100%) scale(0.92);
+    filter: blur(8px);
+  }
+  60% {
+    filter: blur(0);
   }
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0);
   }
 }
 
@@ -106,29 +121,33 @@ body {
   from {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0);
   }
   to {
     opacity: 0;
-    transform: translateY(100%) scale(0.96);
+    transform: translateY(40%) scale(0.96);
+    filter: blur(6px);
   }
 }
 
 .nowplaying-enter {
-  animation: nowplaying-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: nowplaying-enter 0.52s var(--ease-silk) both;
+  will-change: transform, opacity, filter;
 }
 
 .nowplaying-exit {
-  animation: nowplaying-exit 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+  animation: nowplaying-exit 0.34s var(--ease-in-soft) both;
+  will-change: transform, opacity, filter;
 }
 
 /* === 歌单详情滑入 === */
 @keyframes slide-in-right {
-  from { opacity: 0; transform: translateX(24px); }
+  from { opacity: 0; transform: translateX(28px); }
   to { opacity: 1; transform: translateX(0); }
 }
 
 .slide-in-right {
-  animation: slide-in-right 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: slide-in-right 0.4s var(--ease-silk) both;
 }
 
 /* album art rotation when playing */
@@ -223,7 +242,7 @@ html.dark .glow-card::before {
 /* === 歌词动画修复 === */
 /* 用 transform 缩放代替 fontSize 变化，避免 reflow 跳动 */
 .lyric-line {
-  transition: color 0.35s ease, opacity 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: color 0.45s var(--ease-silk), opacity 0.45s var(--ease-silk), transform 0.45s var(--ease-out-back), filter 0.45s var(--ease-silk);
   will-change: transform, opacity;
   transform-origin: center;
 }
@@ -239,6 +258,72 @@ html.dark .glow-card::before {
 /* 平滑滚动（歌词容器） */
 .lyric-scroll {
   scroll-behavior: smooth;
+}
+
+/* === 丝滑微交互工具类 === */
+/* 按钮/图标按压反馈 */
+.press-silk {
+  transition: transform 0.28s var(--ease-out-back), color 0.2s ease, background 0.2s ease;
+  will-change: transform;
+}
+.press-silk:hover {
+  transform: scale(1.1);
+}
+.press-silk:active {
+  transform: scale(0.9);
+  transition: transform 0.1s ease;
+}
+
+/* 卡片悬浮抬升 */
+.lift-silk {
+  transition: transform 0.4s var(--ease-silk), box-shadow 0.4s var(--ease-silk);
+  will-change: transform;
+}
+.lift-silk:hover {
+  transform: translateY(-4px);
+}
+.lift-silk:active {
+  transform: translateY(-1px) scale(0.99);
+  transition: transform 0.12s ease;
+}
+
+/* 底部播放栏滑入 */
+@keyframes bottom-player-enter {
+  from {
+    opacity: 0;
+    transform: translateY(120%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.bottom-player-enter {
+  animation: bottom-player-enter 0.55s var(--ease-silk) both;
+}
+
+/* 浮层淡入 */
+@keyframes sheet-enter {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.sheet-enter {
+  animation: sheet-enter 0.4s var(--ease-silk) both;
+}
+
+/* 遮罩淡入 */
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.overlay-fade {
+  animation: overlay-fade-in 0.3s ease both;
 }
 
 
