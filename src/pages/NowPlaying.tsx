@@ -30,6 +30,7 @@ function LyricList({
   effect,
   isDark,
   align,
+  bounceScroll,
   scrollRef,
   onSeek,
   duration,
@@ -44,12 +45,49 @@ function LyricList({
   effect: "none" | "blur" | "fade";
   isDark: boolean;
   align: "left" | "center" | "right";
+  bounceScroll: boolean;
   scrollRef: React.RefObject<HTMLDivElement>;
   onSeek: (p: number) => void;
   duration: number;
   reduceMotion: boolean;
 }) {
   const lastIdxRef = useRef(-1);
+  const rafRef = useRef<number | null>(null);
+
+  // 回弹滚动：自定义动画，到达目标后轻微回弹
+  const animateBounceScroll = useCallback(
+    (container: HTMLDivElement, target: number) => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      const start = container.scrollTop;
+      const delta = target - start;
+      const durationMs = 620;
+      const startTime = performance.now();
+      // 回弹曲线：先冲过目标少许，再回到目标
+      // 用两段缓动近似：过冲量 6%
+      const overshoot = delta * 0.06;
+
+      const easeOutBack = (t: number) => {
+        const c1 = 1.2;
+        const c3 = c1 + 1;
+        return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+      };
+
+      const tick = (now: number) => {
+        const t = Math.min(1, (now - startTime) / durationMs);
+        const eased = easeOutBack(t);
+        const next = start + (delta + overshoot) * eased - overshoot * Math.min(1, t * 1.1);
+        container.scrollTop = next;
+        if (t < 1) {
+          rafRef.current = requestAnimationFrame(tick);
+        } else {
+          container.scrollTop = target;
+          rafRef.current = null;
+        }
+      };
+      rafRef.current = requestAnimationFrame(tick);
+    },
+    [],
+  );
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -64,33 +102,63 @@ function LyricList({
 
     const target =
       el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2;
-    container.scrollTo({
-      top: Math.max(0, target),
-      behavior: reduceMotion ? "auto" : "smooth",
-    });
-  }, [currentIndex, scrollRef, reduceMotion]);
+    const clamped = Math.max(0, target);
+
+    if (reduceMotion) {
+      container.scrollTop = clamped;
+    } else if (bounceScroll) {
+      animateBounceScroll(container, clamped);
+    } else {
+      container.scrollTo({ top: clamped, behavior: "smooth" });
+    }
+  }, [currentIndex, scrollRef, reduceMotion, bounceScroll, animateBounceScroll]);
 
   useEffect(() => {
     lastIdxRef.current = -1;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [lyrics, scrollRef]);
 
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   const itemStyle = useCallback(
     (i: number): React.CSSProperties => {
       const active = i === currentIndex;
       const dist = Math.abs(i - currentIndex);
+
+      // 颜色：当前行使用强调色；相邻行更亮，远行渐暗
       const baseColor = active
         ? "var(--accent)"
-        : isDark
-          ? "rgba(255,255,255,0.35)"
-          : "rgba(0,0,0,0.35)";
+        : dist <= 1
+          ? isDark
+            ? "rgba(255,255,255,0.62)"
+            : "rgba(0,0,0,0.58)"
+          : isDark
+            ? "rgba(255,255,255,0.32)"
+            : "rgba(0,0,0,0.32)";
 
-      if (active || effect === "none") {
+      // 焦点行永远不模糊、不透明
+      if (active) {
         return {
-          fontSize: active ? Math.round(fontSize * 1.35) : fontSize,
-          fontWeight: active ? 700 : fontWeight,
+          fontSize: Math.round(fontSize * 1.32),
+          fontWeight: 700,
           color: baseColor,
-          transform: active ? "scale(1.02)" : "scale(1)",
+          transform: "scale(1.02)",
+          letterSpacing: "0.01em",
+          filter: "none",
+          opacity: 1,
+        };
+      }
+      if (effect === "none") {
+        return {
+          fontSize,
+          fontWeight,
+          color: baseColor,
+          transform: "scale(1)",
+          letterSpacing: "0.02em",
         };
       }
       if (effect === "fade") {
@@ -98,17 +166,21 @@ function LyricList({
           fontSize,
           fontWeight,
           color: baseColor,
-          opacity: Math.max(0.15, 1 - dist * 0.22),
+          opacity: Math.max(0.2, 1 - dist * 0.2),
           transform: "scale(1)",
+          letterSpacing: "0.02em",
+          filter: "none",
         };
       }
+      // blur：焦点外的行渐变模糊，但焦点本身不模糊（上面已处理）
       return {
         fontSize,
         fontWeight,
         color: baseColor,
-        opacity: Math.max(0.25, 1 - dist * 0.1),
-        filter: dist > 0 ? `blur(${Math.min(3, dist * 0.5)}px)` : undefined,
+        opacity: Math.max(0.3, 1 - dist * 0.08),
+        filter: `blur(${Math.min(3, dist * 0.5)}px)`,
         transform: "scale(1)",
+        letterSpacing: "0.02em",
       };
     },
     [currentIndex, fontSize, fontWeight, effect, isDark],
@@ -121,15 +193,18 @@ function LyricList({
         ? "items-end text-right"
         : "items-center text-center";
 
+  const padSide = align === "left" ? "0 0.5rem 0 1.25rem" : align === "right" ? "0 1.25rem 0 0.5rem" : undefined;
+
   return (
     <div
       ref={scrollRef}
-      className="lyric-scroll flex-1 overflow-y-auto rounded-xl px-2"
+      className="lyric-scroll flex-1 overflow-y-auto rounded-xl px-3"
       style={{
         maskImage:
-          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
+          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
         WebkitMaskImage:
-          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
+          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+        scrollBehavior: bounceScroll && !reduceMotion ? "auto" : "smooth",
       }}
     >
       {loading ? (
@@ -144,22 +219,34 @@ function LyricList({
           </p>
         </div>
       ) : (
-        <div className={`flex flex-col py-10 ${alignClass}`} style={{ fontFamily }}>
-          {lyrics.map((line, i) => (
-            <p
-              key={i}
-              data-idx={i}
-              className="lyric-line cursor-pointer py-2 transition-[color,opacity,filter,transform,font-size] duration-500"
-              style={{
-                ...itemStyle(i),
-                maxWidth: "90%",
-                padding: align === "left" ? "0 0 0 1rem" : align === "right" ? "0 1rem 0 0" : undefined,
-              }}
-              onClick={() => onSeek(duration > 0 ? line.time / duration : 0)}
-            >
-              {line.text || "♪"}
-            </p>
-          ))}
+        <div
+          className={`flex flex-col py-12 ${alignClass}`}
+          style={{ fontFamily, gap: "0.15em" }}
+        >
+          {lyrics.map((line, i) => {
+            const active = i === currentIndex;
+            return (
+              <p
+                key={i}
+                data-idx={i}
+                className={`lyric-line cursor-pointer leading-relaxed transition-[color,opacity,filter,transform,font-size,letter-spacing] duration-500 ${active ? "lyric-focus" : ""}`}
+                style={{
+                  ...itemStyle(i),
+                  maxWidth: align === "center" ? "92%" : "100%",
+                  padding: padSide,
+                  margin: align === "center" ? "0 auto" : undefined,
+                  textShadow: active
+                    ? isDark
+                      ? "0 1px 12px rgba(0,0,0,0.4)"
+                      : "0 1px 8px rgba(0,0,0,0.08)"
+                    : "none",
+                }}
+                onClick={() => onSeek(duration > 0 ? line.time / duration : 0)}
+              >
+                {line.text || "♪"}
+              </p>
+            );
+          })}
         </div>
       )}
     </div>
@@ -460,7 +547,7 @@ function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 效果 */}
-        <div>
+        <div className="mb-4">
           <div style={labelStyle}>非当前行效果</div>
           <div className="flex gap-2">
             {([
@@ -479,6 +566,46 @@ function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         </div>
+
+        {/* 回弹滚动开关 */}
+        <div className="flex items-center justify-between rounded-xl px-3 py-3" style={{ background: "var(--surface-elevated)" }}>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+              回弹滚动
+            </span>
+            <span className="text-[11px]" style={{ color: "var(--text-secondary)" }}>
+              歌词切换时带轻微回弹动画
+            </span>
+          </div>
+          <button
+            onClick={() => updateSetting("lyricBounceScroll", !settings.lyricBounceScroll)}
+            role="switch"
+            aria-checked={settings.lyricBounceScroll}
+            aria-label="回弹滚动"
+            className="relative transition-all duration-300"
+            style={{
+              width: 44,
+              height: 26,
+              borderRadius: 13,
+              border: "none",
+              cursor: "pointer",
+              background: settings.lyricBounceScroll ? "var(--accent)" : "var(--surface)",
+              boxShadow: settings.lyricBounceScroll ? "none" : "inset 0 0 0 1px var(--border)",
+              transitionTimingFunction: "var(--ease-silk)",
+            }}
+          >
+            <span
+              className="absolute top-1 rounded-full bg-white transition-all duration-300"
+              style={{
+                width: 22,
+                height: 22,
+                left: settings.lyricBounceScroll ? 21 : 3,
+                transitionTimingFunction: "var(--ease-out-back)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+              }}
+            />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -494,6 +621,7 @@ export default function NowPlaying() {
   const lyricAlign = useAppStore((s) => s.settings.lyricAlign);
   const lyricWeight = useAppStore((s) => s.settings.lyricWeight);
   const lyricFontFamily = useAppStore((s) => s.settings.lyricFontFamily);
+  const lyricBounceScroll = useAppStore((s) => s.settings.lyricBounceScroll);
   const reduceMotion = useAppStore((s) => s.settings.reduceMotion);
   const lyrics = useAppStore((s) => s.player.lyrics);
   const lyricsLoading = useAppStore((s) => s.player.lyricsLoading);
@@ -646,6 +774,7 @@ export default function NowPlaying() {
     effect: lyricEffect,
     isDark,
     align: lyricAlign,
+    bounceScroll: lyricBounceScroll,
     onSeek: useAppStore.getState().seekTo,
     duration: currentTrack.duration,
     reduceMotion,

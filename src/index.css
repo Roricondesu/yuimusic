@@ -242,7 +242,7 @@ html.dark .glow-card::before {
 /* === 歌词动画修复 === */
 /* 用 transform 缩放代替 fontSize 变化，避免 reflow 跳动 */
 .lyric-line {
-  transition: color 0.45s var(--ease-silk), opacity 0.45s var(--ease-silk), transform 0.45s var(--ease-out-back), filter 0.45s var(--ease-silk);
+  transition: color 0.5s var(--ease-silk), opacity 0.5s var(--ease-silk), transform 0.5s var(--ease-out-back), filter 0.5s var(--ease-silk), letter-spacing 0.5s var(--ease-silk);
   will-change: transform, opacity;
   transform-origin: center;
 }
@@ -253,6 +253,12 @@ html.dark .glow-card::before {
 
 .lyric-inactive {
   transform: scale(1);
+}
+
+/* 焦点行：保持锐利，避免模糊叠加 */
+.lyric-focus {
+  filter: none !important;
+  opacity: 1 !important;
 }
 
 /* 平滑滚动（歌词容器） */

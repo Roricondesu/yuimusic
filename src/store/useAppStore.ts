@@ -43,6 +43,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   lyricAlign: "center",
   lyricWeight: "normal",
   lyricFontFamily: "system",
+  lyricBounceScroll: true,
   monoAudio: false,
   defaultQuery: "",
   osuMirror: "sayobot",

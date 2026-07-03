@@ -98,6 +98,8 @@ export interface AppSettings {
   lyricWeight: "normal" | "medium" | "bold";
   /** 歌词字体族 */
   lyricFontFamily: "system" | "serif" | "mono";
+  /** 歌词滚动是否使用回弹动画（接近焦点时减速回弹） */
+  lyricBounceScroll: boolean;
   /** 单声道音频 */
   monoAudio: boolean;
   /** 默认搜索词（空则 pop） */
