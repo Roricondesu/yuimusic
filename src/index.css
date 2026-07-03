@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Code Pro 字体（启动页 & favicon 用） */
+@font-face {
+  font-family: "Code Pro";
+  src: url("/fonts/Code-Pro.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;

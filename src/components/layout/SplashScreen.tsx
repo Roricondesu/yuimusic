@@ -95,10 +95,9 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             borderRadius: 18,
             padding: "1rem 1.6rem",
             paddingLeft: "calc(1.6rem + 0.18em)", // 补偿 letter-spacing 居中
-            fontFamily:
-              '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "Source Code Pro", monospace',
-            fontWeight: 600,
-            fontSize: 30,
+            fontFamily: '"Code Pro", "SF Mono", "Menlo", "Monaco", "Cascadia Code", "Source Code Pro", monospace',
+            fontWeight: 400,
+            fontSize: 32,
             letterSpacing: "0.18em",
           }}
         >
