@@ -387,12 +387,22 @@ function QueuePanel({
   return (
     <div
       className="overlay-fade absolute inset-0 z-30 flex flex-col"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
+      style={{
+        background: "rgba(0,0,0,0.5)",
+        backdropFilter: "blur(20px)",
+        // 让遮罩底部延伸到 BottomPlayer 之下，避免出现硬黑边
+        bottom: 0,
+      }}
       onClick={onClose}
     >
       <div
-        className="sheet-enter mb-28 mt-auto max-h-[60%] overflow-hidden rounded-t-3xl md:mb-24"
-        style={{ background: "var(--surface)" }}
+        className="sheet-enter mt-auto max-h-[60%] overflow-hidden rounded-t-3xl"
+        style={{
+          background: "var(--surface)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          marginBottom: 96,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4">
@@ -479,12 +489,21 @@ function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="overlay-fade absolute inset-0 z-30 flex flex-col"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
+      style={{
+        background: "rgba(0,0,0,0.5)",
+        backdropFilter: "blur(20px)",
+        bottom: 0,
+      }}
       onClick={onClose}
     >
       <div
-        className="sheet-enter mb-28 mt-auto max-h-[85vh] overflow-y-auto rounded-t-3xl p-5 md:mb-24"
-        style={{ background: "var(--surface)" }}
+        className="sheet-enter mt-auto max-h-[85vh] overflow-y-auto rounded-t-3xl p-5"
+        style={{
+          background: "var(--surface)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          marginBottom: 96,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -1037,18 +1056,12 @@ export default function NowPlaying() {
           {/* 右侧：歌词 */}
           <div className="flex h-full min-h-0 flex-col">
             <div className="mb-2 flex items-center justify-between">
-              <span
-                className="text-xs font-medium uppercase tracking-wider"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                歌词
-              </span>
               <button
                 onClick={() => setShowLyricSettings(true)}
                 className="flex items-center gap-1 text-xs"
                 style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
               >
-                <Type size={12} /> 样式
+                <Type size={12} /> 歌词样式
               </button>
             </div>
             <LyricList {...lyricProps} scrollRef={lyricScrollRef} />

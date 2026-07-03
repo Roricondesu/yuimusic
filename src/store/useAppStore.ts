@@ -50,6 +50,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultQuery: "",
   osuMirror: "sayobot",
   lyricsSource: "auto",
+  showSourceBadge: true,
+  autoLoadLyrics: true,
+  keepScreenOn: false,
+  compactMode: false,
+  splashDuration: 2400,
 };
 
 const DEFAULT_QUERY = "pop";

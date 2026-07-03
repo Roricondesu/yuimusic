@@ -19,6 +19,7 @@ export default function App() {
   const activeTab = useAppStore((s) => s.activeTab);
   const showNowPlaying = useAppStore((s) => s.player.showNowPlaying);
   const init = useAppStore((s) => s.init);
+  const splashDuration = useAppStore((s) => s.settings.splashDuration);
 
   // 用于 NowPlaying 退出动画
   const [renderNowPlaying, setRenderNowPlaying] = useState(false);
@@ -66,7 +67,7 @@ export default function App() {
   return (
     <div className="relative min-h-full">
       {showSplash && (
-        <SplashScreen onFinished={() => setShowSplash(false)} />
+        <SplashScreen duration={splashDuration} onFinished={() => setShowSplash(false)} />
       )}
 
       <Background />

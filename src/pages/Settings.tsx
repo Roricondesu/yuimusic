@@ -12,6 +12,7 @@ import {
   Github,
   Palette,
   Database,
+  ChevronDown,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { GlassButton } from "@/components/glass/GlassButton";
@@ -19,7 +20,16 @@ import { GlassSwitch } from "@/components/glass/GlassSwitch";
 import { GlassSlider } from "@/components/glass/GlassSlider";
 import { ACCENTS } from "@/utils/accents";
 import type { AppSettings } from "@/types";
-import React, { memo } from "react";
+import React, { memo, useState } from "react";
+
+type Scheme = "light" | "dark";
+
+// 单一订阅点：顶层 Settings 只调用一次，再以 prop 形式向下传递，
+// 避免每个 GlassSwitch/GlassSlider/GlassButton 各自订阅 theme 造成级联渲染。
+const useScheme = (): Scheme => {
+  const theme = useAppStore((s) => s.settings.theme);
+  return theme === "dark" ? "dark" : "light";
+};
 
 const QUALITIES: AppSettings["quality"][] = ["low", "normal", "high"];
 const QUALITY_LABELS: Record<AppSettings["quality"], string> = {
@@ -65,28 +75,74 @@ const LYRIC_SOURCE_OPTIONS: {
   { key: "lrclib", label: "LRCLIB", desc: "海外开源歌词库，英文歌词好" },
 ];
 
-const SectionCard: React.FC<{ children: React.ReactNode; delay?: number }> = ({
-  children,
-  delay = 1,
-}) => (
-  <section className={`animate-enter animate-enter-${delay}`}>
-    <div className="solid-card p-5">{children}</div>
-  </section>
-);
+// 所有布尔型设置项，供 SimpleSwitch 复用
+type BooleanSettingKey =
+  | "autoplay"
+  | "gapless"
+  | "spatialAudio"
+  | "monoAudio"
+  | "showSourceBadge"
+  | "autoLoadLyrics"
+  | "keepScreenOn"
+  | "compactMode";
 
-const SectionHeader: React.FC<{ icon: React.ReactNode; title: string }> = ({
-  icon,
-  title,
-}) => (
-  <div className="mb-4 flex items-center gap-2">
-    <span style={{ color: "var(--text-secondary)" }}>{icon}</span>
-    <h2 className="text-base font-semibold md:text-lg" style={{ color: "var(--text-primary)" }}>
-      {title}
-    </h2>
-  </div>
-);
+// 可折叠分组容器：header（图标 + 标题 + chevron）点击切换展开/收起，
+// 使用 grid-template-rows 0fr/1fr 动画过渡高度。
+const CollapsibleSection: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  defaultOpen?: boolean;
+  delay?: number;
+  children: React.ReactNode;
+}> = ({ icon, title, defaultOpen = false, delay = 1, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`animate-enter animate-enter-${delay}`}>
+      <div className="solid-card p-5">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setOpen((o) => !o);
+            }
+          }}
+          className="flex w-full items-center justify-between"
+          style={{ cursor: "pointer" }}
+        >
+          <div className="flex items-center gap-2">
+            <span style={{ color: "var(--text-secondary)" }}>{icon}</span>
+            <h2 className="text-base font-semibold md:text-lg" style={{ color: "var(--text-primary)" }}>
+              {title}
+            </h2>
+          </div>
+          <ChevronDown
+            size={18}
+            style={{
+              color: "var(--text-secondary)",
+              transform: open ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 0.3s ease",
+            }}
+          />
+        </div>
+        <div
+          className="grid transition-all duration-300 ease-out"
+          style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
+        >
+          <div className="overflow-hidden">
+            <div className="mt-4">{children}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
 
 // === 外观 ===
+// ThemeToggle 是主题切换器本身，保持对 theme 的订阅。
 const ThemeToggle = memo(function ThemeToggle() {
   const theme = useAppStore((s) => s.settings.theme);
   const updateSetting = useAppStore((s) => s.updateSetting);
@@ -140,11 +196,9 @@ const AccentPicker = memo(function AccentPicker() {
   );
 });
 
-const MotionToggle = memo(function MotionToggle() {
+const MotionToggle = memo(function MotionToggle({ scheme }: { scheme: Scheme }) {
   const reduceMotion = useAppStore((s) => s.settings.reduceMotion);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <GlassSwitch
       checked={reduceMotion}
@@ -155,11 +209,9 @@ const MotionToggle = memo(function MotionToggle() {
   );
 });
 
-const LyricsToggle = memo(function LyricsToggle() {
+const LyricsToggle = memo(function LyricsToggle({ scheme }: { scheme: Scheme }) {
   const showLyrics = useAppStore((s) => s.settings.showLyrics);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <GlassSwitch
       checked={showLyrics}
@@ -170,10 +222,39 @@ const LyricsToggle = memo(function LyricsToggle() {
   );
 });
 
-const AppearanceSection = memo(function AppearanceSection() {
+const SplashDurationSlider = memo(function SplashDurationSlider({ scheme }: { scheme: Scheme }) {
+  const value = useAppStore((s) => s.settings.splashDuration);
+  const updateSetting = useAppStore((s) => s.updateSetting);
   return (
-    <SectionCard delay={2}>
-      <SectionHeader icon={<Monitor size={18} />} title="外观" />
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>启动页时长</div>
+        <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {(value / 1000).toFixed(1)} 秒
+        </span>
+      </div>
+      <div className="py-1">
+        <GlassSlider
+          value={value}
+          onValueChange={(v) => updateSetting("splashDuration", v)}
+          min={1000}
+          max={4000}
+          step={200}
+          thumbHeight={18}
+          thumbWidth={18}
+          height={5}
+          rubberOvershoot={0.02}
+          scheme={scheme}
+          ariaLabel="启动页时长"
+        />
+      </div>
+    </div>
+  );
+});
+
+const AppearanceSection = memo(function AppearanceSection({ scheme }: { scheme: Scheme }) {
+  return (
+    <CollapsibleSection icon={<Monitor size={18} />} title="外观" defaultOpen delay={2}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
@@ -188,22 +269,44 @@ const AppearanceSection = memo(function AppearanceSection() {
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>减少动态效果</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>关闭背景漂浮动画</div>
           </div>
-          <MotionToggle />
+          <MotionToggle scheme={scheme} />
         </div>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>显示歌词</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>在播放页自动加载歌词</div>
           </div>
-          <LyricsToggle />
+          <LyricsToggle scheme={scheme} />
         </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>显示来源徽标</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>在曲目标签上展示来源</div>
+          </div>
+          <SimpleSwitch settingKey="showSourceBadge" scheme={scheme} ariaLabel="显示来源徽标" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>自动加载歌词</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>进入播放页时自动获取歌词</div>
+          </div>
+          <SimpleSwitch settingKey="autoLoadLyrics" scheme={scheme} ariaLabel="自动加载歌词" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>紧凑模式</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>缩小卡片间距与内边距</div>
+          </div>
+          <SimpleSwitch settingKey="compactMode" scheme={scheme} ariaLabel="紧凑模式" />
+        </div>
+        <SplashDurationSlider scheme={scheme} />
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 音乐来源 ===
-const SourceSection = memo(function SourceSection() {
+const SourceSection = memo(function SourceSection({ scheme }: { scheme: Scheme }) {
   const preferredSource = useAppStore((s) => s.settings.preferredSource);
   const jamendoClientId = useAppStore((s) => s.settings.jamendoClientId);
   const defaultQuery = useAppStore((s) => s.settings.defaultQuery);
@@ -217,8 +320,7 @@ const SourceSection = memo(function SourceSection() {
   };
 
   return (
-    <SectionCard delay={2}>
-      <SectionHeader icon={<Database size={18} />} title="音乐来源" />
+    <CollapsibleSection icon={<Database size={18} />} title="音乐来源" delay={2}>
       <div className="flex flex-col gap-2">
         {SOURCE_OPTIONS.map((opt) => (
           <button
@@ -274,7 +376,7 @@ const SourceSection = memo(function SourceSection() {
           style={{ background: "rgba(128,128,128,0.08)", color: "var(--text-primary)" }}
         />
         <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-          打开曲库时自动搜索的关键词，留空则使用"pop"。
+          打开曲库时自动搜索的关键词，留空则使用“pop”。
         </p>
       </div>
 
@@ -312,16 +414,14 @@ const SourceSection = memo(function SourceSection() {
           搜索始终通过 osu.direct（支持跨域），下载谱面时可选择更快的镜像。推荐国内用户使用 Sayobot。
         </p>
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 播放 ===
-const VolumeLimitSlider = memo(function VolumeLimitSlider() {
+const VolumeLimitSlider = memo(function VolumeLimitSlider({ scheme }: { scheme: Scheme }) {
   const value = useAppStore((s) => s.settings.volumeLimit);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -349,11 +449,9 @@ const VolumeLimitSlider = memo(function VolumeLimitSlider() {
   );
 });
 
-const CrossfadeSlider = memo(function CrossfadeSlider() {
+const CrossfadeSlider = memo(function CrossfadeSlider({ scheme }: { scheme: Scheme }) {
   const value = useAppStore((s) => s.settings.crossfade);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -381,11 +479,9 @@ const CrossfadeSlider = memo(function CrossfadeSlider() {
   );
 });
 
-const BassBoostSlider = memo(function BassBoostSlider() {
+const BassBoostSlider = memo(function BassBoostSlider({ scheme }: { scheme: Scheme }) {
   const value = useAppStore((s) => s.settings.bassBoost);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -413,11 +509,9 @@ const BassBoostSlider = memo(function BassBoostSlider() {
   );
 });
 
-const PlaybackSpeedSlider = memo(function PlaybackSpeedSlider() {
+const PlaybackSpeedSlider = memo(function PlaybackSpeedSlider({ scheme }: { scheme: Scheme }) {
   const value = useAppStore((s) => s.settings.playbackSpeed);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -452,15 +546,15 @@ const PlaybackSpeedSlider = memo(function PlaybackSpeedSlider() {
 
 const SimpleSwitch = memo(function SimpleSwitch({
   settingKey,
+  scheme,
   ariaLabel,
 }: {
-  settingKey: "autoplay" | "gapless" | "spatialAudio" | "monoAudio";
+  settingKey: BooleanSettingKey;
+  scheme: Scheme;
   ariaLabel: string;
 }) {
   const value = useAppStore((s) => s.settings[settingKey]);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
     <GlassSwitch
       checked={value as boolean}
@@ -584,36 +678,35 @@ const LyricsSourceSelector = memo(function LyricsSourceSelector() {
   );
 });
 
-const PlaybackSection = memo(function PlaybackSection() {
+const PlaybackSection = memo(function PlaybackSection({ scheme }: { scheme: Scheme }) {
   return (
-    <SectionCard delay={3}>
-      <SectionHeader icon={<Headphones size={18} />} title="播放" />
+    <CollapsibleSection icon={<Headphones size={18} />} title="播放" defaultOpen delay={3}>
       <div className="flex flex-col gap-5">
-        <VolumeLimitSlider />
-        <CrossfadeSlider />
-        <BassBoostSlider />
+        <VolumeLimitSlider scheme={scheme} />
+        <CrossfadeSlider scheme={scheme} />
+        <BassBoostSlider scheme={scheme} />
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>自动播放</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>播放结束后自动播放下一首</div>
           </div>
-          <SimpleSwitch settingKey="autoplay" ariaLabel="自动播放" />
+          <SimpleSwitch settingKey="autoplay" scheme={scheme} ariaLabel="自动播放" />
         </div>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>无缝播放</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>消除歌曲之间的间隙</div>
           </div>
-          <SimpleSwitch settingKey="gapless" ariaLabel="无缝播放" />
+          <SimpleSwitch settingKey="gapless" scheme={scheme} ariaLabel="无缝播放" />
         </div>
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>空间音频</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>模拟环绕立体声效果</div>
           </div>
-          <SimpleSwitch settingKey="spatialAudio" ariaLabel="空间音频" />
+          <SimpleSwitch settingKey="spatialAudio" scheme={scheme} ariaLabel="空间音频" />
         </div>
-        <PlaybackSpeedSlider />
+        <PlaybackSpeedSlider scheme={scheme} />
         <LyricFontSizeSelector />
         <LyricEffectSelector />
         <LyricsSourceSelector />
@@ -622,20 +715,26 @@ const PlaybackSection = memo(function PlaybackSection() {
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>单声道播放</div>
             <div className="text-xs" style={{ color: "var(--text-secondary)" }}>变速时保持音高不变</div>
           </div>
-          <SimpleSwitch settingKey="monoAudio" ariaLabel="单声道播放" />
+          <SimpleSwitch settingKey="monoAudio" scheme={scheme} ariaLabel="单声道播放" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>屏幕常亮</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>播放时保持屏幕常亮</div>
+          </div>
+          <SimpleSwitch settingKey="keepScreenOn" scheme={scheme} ariaLabel="屏幕常亮" />
         </div>
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 音质 ===
-const QualitySection = memo(function QualitySection() {
+const QualitySection = memo(function QualitySection({ scheme }: { scheme: Scheme }) {
   const quality = useAppStore((s) => s.settings.quality);
   const updateSetting = useAppStore((s) => s.updateSetting);
   return (
-    <SectionCard delay={4}>
-      <SectionHeader icon={<Waves size={18} />} title="流媒体音质" />
+    <CollapsibleSection icon={<Waves size={18} />} title="流媒体音质" delay={4}>
       <div className="flex flex-col gap-2">
         {QUALITIES.map((q) => (
           <button
@@ -660,19 +759,16 @@ const QualitySection = memo(function QualitySection() {
           </button>
         ))}
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 均衡器 ===
-const EQSection = memo(function EQSection() {
+const EQSection = memo(function EQSection({ scheme }: { scheme: Scheme }) {
   const eqPreset = useAppStore((s) => s.settings.eqPreset);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
-    <SectionCard delay={4}>
-      <SectionHeader icon={<SlidersHorizontal size={18} />} title="均衡器" />
+    <CollapsibleSection icon={<SlidersHorizontal size={18} />} title="均衡器" delay={4}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {EQ_PRESETS.map((preset) => (
           <GlassButton
@@ -688,19 +784,16 @@ const EQSection = memo(function EQSection() {
           </GlassButton>
         ))}
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 定时关闭 ===
-const SleepSection = memo(function SleepSection() {
+const SleepSection = memo(function SleepSection({ scheme }: { scheme: Scheme }) {
   const sleepTimer = useAppStore((s) => s.settings.sleepTimer);
   const updateSetting = useAppStore((s) => s.updateSetting);
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
   return (
-    <SectionCard delay={5}>
-      <SectionHeader icon={<Moon size={18} />} title="定时关闭" />
+    <CollapsibleSection icon={<Moon size={18} />} title="定时关闭" delay={5}>
       <div className="flex flex-wrap gap-2">
         {SLEEP_OPTIONS.map((min) => (
           <GlassButton
@@ -714,15 +807,14 @@ const SleepSection = memo(function SleepSection() {
           </GlassButton>
         ))}
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 下载与缓存 ===
-const DownloadSection = memo(function DownloadSection() {
+const DownloadSection = memo(function DownloadSection({ scheme }: { scheme: Scheme }) {
   return (
-    <SectionCard delay={5}>
-      <SectionHeader icon={<Download size={18} />} title="下载与缓存" />
+    <CollapsibleSection icon={<Download size={18} />} title="下载与缓存" delay={5}>
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between rounded-lg px-3 py-2.5" style={{ background: "rgba(128,128,128,0.06)" }}>
           <div>
@@ -749,17 +841,14 @@ const DownloadSection = memo(function DownloadSection() {
           </button>
         </div>
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 // === 关于 ===
-const AboutSection = memo(function AboutSection() {
-  const theme = useAppStore((s) => s.settings.theme);
-  const scheme = theme === "dark" ? "dark" : "light";
+const AboutSection = memo(function AboutSection({ scheme }: { scheme: Scheme }) {
   return (
-    <SectionCard delay={5}>
-      <SectionHeader icon={<Info size={18} />} title="关于" />
+    <CollapsibleSection icon={<Info size={18} />} title="关于" delay={5}>
       <div className="flex flex-col gap-2 text-sm">
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>版本</span><span style={{ color: "var(--text-primary)" }}>0.2.0</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>玻璃引擎</span><span style={{ color: "var(--text-primary)" }}>@samasante/liquid-glass</span></div>
@@ -790,11 +879,13 @@ const AboutSection = memo(function AboutSection() {
         <GlassButton scheme={scheme} style={{ flex: 1 }}><Github size={14} />源码</GlassButton>
         <GlassButton scheme={scheme} style={{ flex: 1 }}><Shield size={14} />隐私政策</GlassButton>
       </div>
-    </SectionCard>
+    </CollapsibleSection>
   );
 });
 
 export default function Settings() {
+  // 顶层只订阅一次 theme，派生 scheme 后向下传递，避免子组件各自订阅。
+  const scheme = useScheme();
   return (
     <div className="flex flex-col gap-5">
       <section className="animate-enter animate-enter-1">
@@ -810,16 +901,16 @@ export default function Settings() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col gap-5">
-          <AppearanceSection />
-          <PlaybackSection />
-          <QualitySection />
-          <EQSection />
+          <AppearanceSection scheme={scheme} />
+          <PlaybackSection scheme={scheme} />
+          <QualitySection scheme={scheme} />
+          <EQSection scheme={scheme} />
         </div>
         <div className="flex flex-col gap-5">
-          <SourceSection />
-          <SleepSection />
-          <DownloadSection />
-          <AboutSection />
+          <SourceSection scheme={scheme} />
+          <SleepSection scheme={scheme} />
+          <DownloadSection scheme={scheme} />
+          <AboutSection scheme={scheme} />
         </div>
       </div>
 

@@ -112,6 +112,16 @@ export interface AppSettings {
   osuMirror: "sayobot" | "osu.direct";
   /** 歌词来源：auto（并行竞速）| lrclib（海外）| netease（网易云）| kugou（酷狗） */
   lyricsSource: "auto" | "lrclib" | "netease" | "kugou";
+  /** 在曲目标签上显示来源徽标 */
+  showSourceBadge: boolean;
+  /** 进入播放页时自动加载歌词 */
+  autoLoadLyrics: boolean;
+  /** 播放时保持屏幕常亮 */
+  keepScreenOn: boolean;
+  /** 紧凑模式（缩小卡片间距与内边距） */
+  compactMode: boolean;
+  /** 启动页动画总时长（毫秒） */
+  splashDuration: number;
 }
 
 export interface PlayerState {
