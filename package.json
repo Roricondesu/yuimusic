@@ -1,8 +1,9 @@
 {
   "name": "YUIMUSIC",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "pnpm": {
     "onlyBuiltDependencies": ["esbuild"]
   },
@@ -11,9 +12,15 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "tsc -b --noEmit"
+    "check": "tsc -b --noEmit",
+    "electron:dev": "vite build && electron electron/main.cjs",
+    "electron:build": "vite build && electron-builder --config electron-builder.yml",
+    "cap:sync": "cap sync android",
+    "cap:add": "cap add android"
   },
   "dependencies": {
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
     "@samasante/liquid-glass": "^0.1.1",
     "clsx": "^2.1.1",
     "jszip": "^3.10.1",
@@ -25,6 +32,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
     "@eslint/js": "^9.25.0",
     "@types/node": "^22.15.30",
     "@types/react": "^18.3.12",
@@ -32,6 +40,8 @@
     "@vitejs/plugin-react": "^4.4.1",
     "autoprefixer": "^10.4.21",
     "babel-plugin-react-dev-locator": "^1.0.0",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
     "eslint": "^9.25.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.19",

@@ -1,0 +1,147 @@
+name: Release Desktop & Android
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------- Windows exe ----------
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Read version
+        id: ver
+        shell: bash
+        run: echo "v=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build web (Vite)
+        run: npm run build
+
+      - name: Build Electron Windows installer
+        run: npx --yes electron-builder --config electron-builder.yml --win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuimusic-windows
+          path: |
+            release/*.exe
+            release/*.yml
+          if-no-files-found: error
+
+  # ---------- Android APK ----------
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Read version
+        id: ver
+        run: echo "v=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platforms;android-34
+            build-tools;34.0.0
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build web (Vite)
+        run: npm run build
+
+      - name: Sync Capacitor
+        run: |
+          npx --yes @capacitor/cli sync android || \
+          (npx --yes cap add android && npx --yes cap sync android)
+
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        env:
+          VER: ${{ steps.ver.outputs.v }}
+        run: |
+          mkdir -p release
+          SRC=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n1)
+          cp "$SRC" "release/YUIMUSIC-${VER}-android.apk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: yuimusic-android
+          path: release/*.apk
+          if-no-files-found: error
+
+  # ---------- Publish to GitHub Release ----------
+  publish-release:
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: ver
+        run: echo "v=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: assets
+
+      - name: Flatten assets
+        run: |
+          mkdir -p release
+          find assets -type f \( -name "*.exe" -o -name "*.apk" \) -exec cp {} release/ \;
+          ls -la release/
+
+      - name: Create or update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.v }}
+          name: YUIMUSIC ${{ steps.ver.outputs.v }}
+          body: |
+            ## YUIMUSIC ${{ steps.ver.outputs.v }}
+
+            ### 下载
+            - **Windows 安装包**: `YUIMUSIC-*.exe`（NSIS 安装程序）
+            - **Windows 便携版**: `YUIMUSIC-*-portable.exe`（免安装）
+            - **Android APK**: `YUIMUSIC-*-android.apk`（直接安装）
+
+            > Android 安装时如提示「未知来源」，请在系统设置中允许安装。
+          files: release/*
+          draft: false
+          prerelease: false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

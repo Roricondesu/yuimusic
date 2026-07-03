@@ -1,0 +1,27 @@
+appId: com.yuimusic.app
+productName: YUIMUSIC
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: YUIMUSIC-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: YUIMUSIC
+portable:
+  artifactName: YUIMUSIC-${version}-portable.${ext}
+mac:
+  target: []
+  category: public.app-category.music
+linux:
+  target: []
+publish: null
