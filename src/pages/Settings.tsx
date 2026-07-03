@@ -20,7 +20,7 @@ import { GlassSwitch } from "@/components/glass/GlassSwitch";
 import { GlassSlider } from "@/components/glass/GlassSlider";
 import { ACCENTS } from "@/utils/accents";
 import type { AppSettings } from "@/types";
-import React, { memo, useState } from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 
 type Scheme = "light" | "dark";
 
@@ -86,8 +86,10 @@ type BooleanSettingKey =
   | "keepScreenOn"
   | "compactMode";
 
-// 可折叠分组容器：header（图标 + 标题 + chevron）点击切换展开/收起，
-// 使用 grid-template-rows 0fr/1fr 动画过渡高度。
+// 可折叠分组容器：header（图标 + 标题 + chevron）点击切换展开/收起。
+// 关键性能优化：收起时真正卸载子树（GlassSwitch/GlassSlider 等重组件），
+// 仅在展开时挂载，避免大量 liquid-glass 实例常驻导致整页卡顿。
+// 使用 grid-template-rows 0fr/1fr 动画过渡高度；收起时延迟卸载以播放动画。
 const CollapsibleSection: React.FC<{
   icon: React.ReactNode;
   title: string;
@@ -95,7 +97,37 @@ const CollapsibleSection: React.FC<{
   delay?: number;
   children: React.ReactNode;
 }> = ({ icon, title, defaultOpen = false, delay = 1, children }) => {
+  // open：视觉高度状态；render：子树是否挂载
   const [open, setOpen] = useState(defaultOpen);
+  const [render, setRender] = useState(defaultOpen);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleToggle = () => {
+    if (open) {
+      // 收起：先动画收起高度，结束后再卸载子树
+      setOpen(false);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = setTimeout(() => setRender(false), 320);
+    } else {
+      // 展开：先挂载子树（高度 0fr），下一帧再展开到 1fr 触发过渡
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setRender(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setOpen(true));
+      });
+    }
+  };
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    },
+    [],
+  );
+
   return (
     <section className={`animate-enter animate-enter-${delay}`}>
       <div className="solid-card p-5">
@@ -103,11 +135,11 @@ const CollapsibleSection: React.FC<{
           role="button"
           tabIndex={0}
           aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
+          onClick={handleToggle}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              setOpen((o) => !o);
+              handleToggle();
             }
           }}
           className="flex w-full items-center justify-between"
@@ -133,7 +165,7 @@ const CollapsibleSection: React.FC<{
           style={{ gridTemplateRows: open ? "1fr" : "0fr" }}
         >
           <div className="overflow-hidden">
-            <div className="mt-4">{children}</div>
+            {render && <div className="mt-4">{children}</div>}
           </div>
         </div>
       </div>
@@ -254,7 +286,7 @@ const SplashDurationSlider = memo(function SplashDurationSlider({ scheme }: { sc
 
 const AppearanceSection = memo(function AppearanceSection({ scheme }: { scheme: Scheme }) {
   return (
-    <CollapsibleSection icon={<Monitor size={18} />} title="外观" defaultOpen delay={2}>
+    <CollapsibleSection icon={<Monitor size={18} />} title="外观" delay={2}>
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
@@ -680,7 +712,7 @@ const LyricsSourceSelector = memo(function LyricsSourceSelector() {
 
 const PlaybackSection = memo(function PlaybackSection({ scheme }: { scheme: Scheme }) {
   return (
-    <CollapsibleSection icon={<Headphones size={18} />} title="播放" defaultOpen delay={3}>
+    <CollapsibleSection icon={<Headphones size={18} />} title="播放" delay={3}>
       <div className="flex flex-col gap-5">
         <VolumeLimitSlider scheme={scheme} />
         <CrossfadeSlider scheme={scheme} />
