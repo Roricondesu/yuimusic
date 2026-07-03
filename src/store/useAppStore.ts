@@ -12,11 +12,38 @@ import type {
 import { fetchLyrics, findLyricIndex } from "../utils/lyrics";
 import { searchTracks } from "../utils/musicSources";
 import { applyAccent } from "../utils/accents";
+import { getItem, setItem, STORAGE_KEYS } from "../lib/storage";
 
 const applyTheme = (theme: AppSettings["theme"]) => {
   if (typeof document === "undefined") return;
   document.documentElement.classList.remove("light", "dark");
   document.documentElement.classList.add(theme);
+};
+
+// 默认设置，用于合并持久化的部分数据
+const DEFAULT_SETTINGS: AppSettings = {
+  theme: "dark",
+  accent: "blue",
+  quality: "high",
+  crossfade: 0,
+  volumeLimit: 1,
+  eqPreset: "flat",
+  reduceMotion: false,
+  autoplay: true,
+  gapless: false,
+  bassBoost: 0,
+  spatialAudio: false,
+  showLyrics: true,
+  sleepTimer: 0,
+  preferredSource: "mixed",
+  jamendoClientId: "",
+  playbackSpeed: 1,
+  lyricFontSize: "medium",
+  lyricEffect: "fade",
+  monoAudio: false,
+  defaultQuery: "",
+  osuMirror: "sayobot",
+  lyricsSource: "auto",
 };
 
 const DEFAULT_QUERY = "pop";
@@ -31,6 +58,13 @@ const randomIndex = (length: number, exclude?: number) => {
 };
 
 const genId = () => `pl-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+
+// 持久化辅助：写入后异步保存到 IndexedDB
+const persistFavorites = (favorites: Track[]) => setItem(STORAGE_KEYS.favorites, favorites);
+const persistPlaylists = (playlists: Playlist[]) => setItem(STORAGE_KEYS.playlists, playlists);
+const persistHistory = (history: Track[]) => setItem(STORAGE_KEYS.history, history);
+const persistSettings = (settings: AppSettings) => setItem(STORAGE_KEYS.settings, settings);
+const persistDownloads = (downloads: DownloadItem[]) => setItem(STORAGE_KEYS.downloads, downloads);
 
 interface AppState {
   activeTab: TabKey;
@@ -139,6 +173,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         osuDownloadProgress: -1,
       },
     });
+    persistHistory(newHistory);
     get().loadLyrics(track);
   },
 
@@ -238,6 +273,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? player.favorites.filter((t) => t.id !== track.id)
       : [track, ...player.favorites];
     set({ player: { ...player, favorites } });
+    persistFavorites(favorites);
   },
 
   isFavorite: (id) => get().player.favorites.some((t) => t.id === id),
@@ -252,62 +288,52 @@ export const useAppStore = create<AppState>((set, get) => ({
       createdAt: Date.now(),
       color,
     };
-    set({
-      player: { ...get().player, playlists: [playlist, ...get().player.playlists] },
-    });
+    const playlists = [playlist, ...get().player.playlists];
+    set({ player: { ...get().player, playlists } });
+    persistPlaylists(playlists);
     return id;
   },
 
   deletePlaylist: (id) => {
+    const playlists = get().player.playlists.filter((p) => p.id !== id);
     set({
-      player: {
-        ...get().player,
-        playlists: get().player.playlists.filter((p) => p.id !== id),
-      },
+      player: { ...get().player, playlists },
       openPlaylistId: get().openPlaylistId === id ? null : get().openPlaylistId,
     });
+    persistPlaylists(playlists);
   },
 
   renamePlaylist: (id, name) => {
-    set({
-      player: {
-        ...get().player,
-        playlists: get().player.playlists.map((p) =>
-          p.id === id ? { ...p, name } : p,
-        ),
-      },
-    });
+    const playlists = get().player.playlists.map((p) =>
+      p.id === id ? { ...p, name } : p,
+    );
+    set({ player: { ...get().player, playlists } });
+    persistPlaylists(playlists);
   },
 
   addToPlaylist: (playlistId, track) => {
-    set({
-      player: {
-        ...get().player,
-        playlists: get().player.playlists.map((p) =>
-          p.id === playlistId
-            ? {
-                ...p,
-                tracks: p.tracks.some((t) => t.id === track.id)
-                  ? p.tracks
-                  : [...p.tracks, track],
-              }
-            : p,
-        ),
-      },
-    });
+    const playlists = get().player.playlists.map((p) =>
+      p.id === playlistId
+        ? {
+            ...p,
+            tracks: p.tracks.some((t) => t.id === track.id)
+              ? p.tracks
+              : [...p.tracks, track],
+          }
+        : p,
+    );
+    set({ player: { ...get().player, playlists } });
+    persistPlaylists(playlists);
   },
 
   removeFromPlaylist: (playlistId, trackId) => {
-    set({
-      player: {
-        ...get().player,
-        playlists: get().player.playlists.map((p) =>
-          p.id === playlistId
-            ? { ...p, tracks: p.tracks.filter((t) => t.id !== trackId) }
-            : p,
-        ),
-      },
-    });
+    const playlists = get().player.playlists.map((p) =>
+      p.id === playlistId
+        ? { ...p, tracks: p.tracks.filter((t) => t.id !== trackId) }
+        : p,
+    );
+    set({ player: { ...get().player, playlists } });
+    persistPlaylists(playlists);
   },
 
   isTrackInPlaylist: (playlistId, trackId) => {
@@ -427,102 +453,106 @@ export const useAppStore = create<AppState>((set, get) => ({
   addDownload: (track, mirror) => {
     const existing = get().downloads.find((d) => d.track.id === track.id);
     if (existing) return;
-    set({
-      downloads: [
-        {
-          track,
-          status: "downloading",
-          progress: 0,
-          mirror,
-          createdAt: Date.now(),
-        },
-        ...get().downloads,
-      ],
-    });
+    const downloads = [
+      {
+        track,
+        status: "downloading" as const,
+        progress: 0,
+        mirror,
+        createdAt: Date.now(),
+      },
+      ...get().downloads,
+    ];
+    set({ downloads });
+    persistDownloads(downloads);
   },
 
   updateDownload: (trackId, progress) => {
-    set({
-      downloads: get().downloads.map((d) =>
-        d.track.id === trackId && d.status === "downloading"
-          ? { ...d, progress }
-          : d,
-      ),
-    });
+    const downloads = get().downloads.map((d) =>
+      d.track.id === trackId && d.status === "downloading"
+        ? { ...d, progress }
+        : d,
+    );
+    set({ downloads });
+    persistDownloads(downloads);
   },
 
   completeDownload: (trackId) => {
-    set({
-      downloads: get().downloads.map((d) =>
-        d.track.id === trackId
-          ? { ...d, status: "completed", progress: 1 }
-          : d,
-      ),
-    });
+    const downloads = get().downloads.map((d) =>
+      d.track.id === trackId
+        ? { ...d, status: "completed" as const, progress: 1 }
+        : d,
+    );
+    set({ downloads });
+    persistDownloads(downloads);
   },
 
   failDownload: (trackId) => {
-    set({
-      downloads: get().downloads.map((d) =>
-        d.track.id === trackId ? { ...d, status: "failed" } : d,
-      ),
-    });
+    const downloads = get().downloads.map((d) =>
+      d.track.id === trackId ? { ...d, status: "failed" as const } : d,
+    );
+    set({ downloads });
+    persistDownloads(downloads);
   },
 
   removeDownload: (trackId) => {
-    set({
-      downloads: get().downloads.filter((d) => d.track.id !== trackId),
-    });
+    const downloads = get().downloads.filter((d) => d.track.id !== trackId);
+    set({ downloads });
+    persistDownloads(downloads);
   },
 
   clearDownloads: () => {
     set({ downloads: [] });
+    persistDownloads([]);
   },
 
-  settings: {
-    theme: "dark",
-    accent: "blue",
-    quality: "high",
-    crossfade: 0,
-    volumeLimit: 1,
-    eqPreset: "flat",
-    reduceMotion: false,
-    autoplay: true,
-    gapless: false,
-    bassBoost: 0,
-    spatialAudio: false,
-    showLyrics: true,
-    sleepTimer: 0,
-    preferredSource: "mixed",
-    jamendoClientId: "",
-    playbackSpeed: 1,
-    lyricFontSize: "medium",
-    lyricEffect: "fade",
-    monoAudio: false,
-    defaultQuery: "",
-    osuMirror: "sayobot",
-    lyricsSource: "auto",
-  },
+  settings: { ...DEFAULT_SETTINGS },
 
   setTheme: (theme) => {
     applyTheme(theme);
-    set({ settings: { ...get().settings, theme } });
+    const settings = { ...get().settings, theme };
+    set({ settings });
+    persistSettings(settings);
   },
 
   setAccent: (accent) => {
     applyAccent(accent);
-    set({ settings: { ...get().settings, accent } });
+    const settings = { ...get().settings, accent };
+    set({ settings });
+    persistSettings(settings);
   },
 
   updateSetting: (key, value) => {
     if (key === "theme") applyTheme(value as AppSettings["theme"]);
     if (key === "accent") applyAccent(value as AppSettings["accent"]);
-    set({ settings: { ...get().settings, [key]: value } });
+    const settings = { ...get().settings, [key]: value };
+    set({ settings });
+    persistSettings(settings);
   },
 
-  init: () => {
-    const { settings } = get();
+  init: async () => {
+    // 从 IndexedDB 恢复持久化状态
+    const [favorites, playlists, history, savedSettings, downloads] = await Promise.all([
+      getItem<Track[]>(STORAGE_KEYS.favorites, []),
+      getItem<Playlist[]>(STORAGE_KEYS.playlists, []),
+      getItem<Track[]>(STORAGE_KEYS.history, []),
+      getItem<Partial<AppSettings>>(STORAGE_KEYS.settings, {}),
+      getItem<DownloadItem[]>(STORAGE_KEYS.downloads, []),
+    ]);
+
+    const settings = { ...DEFAULT_SETTINGS, ...savedSettings };
     applyTheme(settings.theme);
     applyAccent(settings.accent);
+
+    set((state) => ({
+      player: {
+        ...state.player,
+        favorites,
+        playlists,
+        history,
+      },
+      downloads,
+      settings,
+    }));
   },
 }));
