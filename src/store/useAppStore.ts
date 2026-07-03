@@ -55,6 +55,23 @@ const DEFAULT_SETTINGS: AppSettings = {
   keepScreenOn: false,
   compactMode: false,
   splashDuration: 2400,
+  // === 背景自定义 ===
+  backgroundMode: "default",
+  backgroundSolid: "#0a0a0f",
+  backgroundGradientFrom: "#1a1a2e",
+  backgroundGradientTo: "#16213e",
+  backgroundGradientAngle: 135,
+  backgroundBlur: 0,
+  backgroundDim: 0,
+  backgroundScale: 110,
+  backgroundImageNonce: 0,
+  // === 界面自定义 ===
+  uiScale: 1,
+  cardOpacity: 1,
+  coverRadius: 12,
+  scrollbarStyle: "auto",
+  miniPlayer: false,
+  showVisualizer: false,
 };
 
 const DEFAULT_QUERY = "pop";

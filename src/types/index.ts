@@ -122,6 +122,38 @@ export interface AppSettings {
   compactMode: boolean;
   /** 启动页动画总时长（毫秒） */
   splashDuration: number;
+  // === 背景自定义 ===
+  /** 背景模式：default（默认渐变光斑）| image（自定义图片）| gradient（渐变）| solid（纯色） */
+  backgroundMode: "default" | "image" | "gradient" | "solid";
+  /** 纯色背景 hex */
+  backgroundSolid: string;
+  /** 渐变起始色 hex */
+  backgroundGradientFrom: string;
+  /** 渐变结束色 hex */
+  backgroundGradientTo: string;
+  /** 渐变角度 0-360 */
+  backgroundGradientAngle: number;
+  /** 背景图片模糊 0-40 px */
+  backgroundBlur: number;
+  /** 背景变暗度 0-0.8 */
+  backgroundDim: number;
+  /** 背景图片缩放 100-130%（避免模糊露出边缘） */
+  backgroundScale: number;
+  /** 背景图片版本号，上传新图后自增以触发重载 */
+  backgroundImageNonce: number;
+  // === 界面自定义 ===
+  /** 界面缩放 0.85-1.15 */
+  uiScale: number;
+  /** 卡片不透明度 0.6-1 */
+  cardOpacity: number;
+  /** 封面圆角 0-24 px */
+  coverRadius: number;
+  /** 滚动条样式 */
+  scrollbarStyle: "auto" | "thin" | "hidden";
+  /** 底部播放栏高度紧凑模式 */
+  miniPlayer: boolean;
+  /** 显示音波可视化（占位，后续接入） */
+  showVisualizer: boolean;
 }
 
 export interface PlayerState {

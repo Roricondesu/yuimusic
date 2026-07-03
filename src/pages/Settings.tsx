@@ -13,11 +13,19 @@ import {
   Palette,
   Database,
   ChevronDown,
+  Image as ImageIcon,
+  Upload,
+  Trash2,
+  Maximize2,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { GlassButton } from "@/components/glass/GlassButton";
 import { GlassSwitch } from "@/components/glass/GlassSwitch";
 import { GlassSlider } from "@/components/glass/GlassSlider";
+import {
+  saveBackgroundImage,
+  clearBackgroundImage,
+} from "@/components/layout/Background";
 import { ACCENTS } from "@/utils/accents";
 import type { AppSettings } from "@/types";
 import React, { memo, useEffect, useRef, useState } from "react";
@@ -84,7 +92,9 @@ type BooleanSettingKey =
   | "showSourceBadge"
   | "autoLoadLyrics"
   | "keepScreenOn"
-  | "compactMode";
+  | "compactMode"
+  | "miniPlayer"
+  | "showVisualizer";
 
 // 可折叠分组容器：header（图标 + 标题 + chevron）点击切换展开/收起。
 // 关键性能优化：收起时真正卸载子树（GlassSwitch/GlassSlider 等重组件），
@@ -332,6 +342,286 @@ const AppearanceSection = memo(function AppearanceSection({ scheme }: { scheme: 
           <SimpleSwitch settingKey="compactMode" scheme={scheme} ariaLabel="紧凑模式" />
         </div>
         <SplashDurationSlider scheme={scheme} />
+      </div>
+    </CollapsibleSection>
+  );
+});
+
+// === 通用数字滑块（背景 / 界面分组共用） ===
+const NumberSlider = memo(function NumberSlider({
+  settingKey,
+  label,
+  min,
+  max,
+  step,
+  unit,
+  scheme,
+}: {
+  settingKey: keyof AppSettings;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  unit: string;
+  scheme: Scheme;
+}) {
+  const value = useAppStore((s) => s.settings[settingKey] as number);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{label}</div>
+        <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {step < 1 ? value.toFixed(2) : Math.round(value)}{unit}
+        </span>
+      </div>
+      <div className="py-1">
+        <GlassSlider
+          value={value}
+          onValueChange={(v) => updateSetting(settingKey, v as never)}
+          min={min}
+          max={max}
+          step={step}
+          thumbHeight={18}
+          thumbWidth={18}
+          height={5}
+          rubberOvershoot={0.02}
+          scheme={scheme}
+          ariaLabel={label}
+        />
+      </div>
+    </div>
+  );
+});
+
+// 通用颜色选择器
+const ColorField = memo(function ColorField({
+  label,
+  settingKey,
+}: {
+  label: string;
+  settingKey: keyof AppSettings;
+}) {
+  const value = useAppStore((s) => s.settings[settingKey] as string);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <div className="flex items-center justify-between">
+      <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{label}</div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-mono" style={{ color: "var(--text-secondary)" }}>{value.toUpperCase()}</span>
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => updateSetting(settingKey, e.target.value as never)}
+          style={{
+            width: 36,
+            height: 28,
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+            cursor: "pointer",
+            background: "transparent",
+            padding: 0,
+          }}
+          aria-label={label}
+        />
+      </div>
+    </div>
+  );
+});
+
+// === 背景 ===
+const BACKGROUND_MODES: { key: AppSettings["backgroundMode"]; label: string; desc: string }[] = [
+  { key: "default", label: "默认", desc: "渐变光斑" },
+  { key: "image", label: "图片", desc: "自定义上传" },
+  { key: "gradient", label: "渐变", desc: "双色渐变" },
+  { key: "solid", label: "纯色", desc: "单色背景" },
+];
+
+const BackgroundImageUploader = memo(function BackgroundImageUploader() {
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  const nonce = useAppStore((s) => s.settings.backgroundImageNonce);
+  const [busy, setBusy] = useState(false);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    setBusy(true);
+    try {
+      await saveBackgroundImage(file);
+      updateSetting("backgroundMode", "image");
+      updateSetting("backgroundImageNonce", nonce + 1);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>背景图片</div>
+        {busy && <span className="text-xs" style={{ color: "var(--text-secondary)" }}>处理中…</span>}
+      </div>
+      <div className="flex gap-2">
+        <label
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            color: "var(--text-primary)",
+            cursor: busy ? "wait" : "pointer",
+          }}
+        >
+          <Upload size={14} />
+          上传图片
+          <input
+            type="file"
+            accept="image/*"
+            hidden
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        <button
+          onClick={async () => {
+            await clearBackgroundImage();
+            updateSetting("backgroundMode", "default");
+            updateSetting("backgroundImageNonce", nonce + 1);
+          }}
+          className="flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--surface)",
+            color: "var(--text-primary)",
+            cursor: "pointer",
+          }}
+        >
+          <Trash2 size={14} />
+          清除
+        </button>
+      </div>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        建议高分辨率宽屏图片。图片仅存本地，不上传服务器。
+      </p>
+    </div>
+  );
+});
+
+const BackgroundSection = memo(function BackgroundSection({ scheme }: { scheme: Scheme }) {
+  const mode = useAppStore((s) => s.settings.backgroundMode);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <CollapsibleSection icon={<ImageIcon size={18} />} title="背景" delay={3}>
+      <div className="flex flex-col gap-4">
+        <div>
+          <div className="mb-2 text-sm font-medium" style={{ color: "var(--text-primary)" }}>背景模式</div>
+          <div className="grid grid-cols-2 gap-2">
+            {BACKGROUND_MODES.map((opt) => {
+              const active = mode === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => updateSetting("backgroundMode", opt.key)}
+                  className="rounded-lg px-3 py-2.5 text-left transition-colors"
+                  style={{
+                    border: "1px solid",
+                    borderColor: active ? "var(--accent)" : "var(--border)",
+                    background: active ? "var(--accent-soft)" : "var(--surface)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>{opt.label}</div>
+                  <div className="text-xs" style={{ color: "var(--text-secondary)" }}>{opt.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {mode === "image" && (
+          <>
+            <BackgroundImageUploader />
+            <NumberSlider settingKey="backgroundBlur" label="模糊" min={0} max={40} step={1} unit="px" scheme={scheme} />
+            <NumberSlider settingKey="backgroundScale" label="缩放" min={100} max={130} step={1} unit="%" scheme={scheme} />
+          </>
+        )}
+
+        {mode === "gradient" && (
+          <>
+            <ColorField label="起始色" settingKey="backgroundGradientFrom" />
+            <ColorField label="结束色" settingKey="backgroundGradientTo" />
+            <NumberSlider settingKey="backgroundGradientAngle" label="角度" min={0} max={360} step={15} unit="°" scheme={scheme} />
+          </>
+        )}
+
+        {mode === "solid" && <ColorField label="背景颜色" settingKey="backgroundSolid" />}
+
+        {(mode === "image" || mode === "gradient" || mode === "solid") && (
+          <NumberSlider settingKey="backgroundDim" label="变暗" min={0} max={0.8} step={0.05} unit="" scheme={scheme} />
+        )}
+      </div>
+    </CollapsibleSection>
+  );
+});
+
+// === 界面 ===
+const SCROLLBAR_OPTIONS: { key: AppSettings["scrollbarStyle"]; label: string }[] = [
+  { key: "auto", label: "默认" },
+  { key: "thin", label: "细窄" },
+  { key: "hidden", label: "隐藏" },
+];
+
+const InterfaceSection = memo(function InterfaceSection({ scheme }: { scheme: Scheme }) {
+  const scrollbarStyle = useAppStore((s) => s.settings.scrollbarStyle);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <CollapsibleSection icon={<Maximize2 size={18} />} title="界面" delay={4}>
+      <div className="flex flex-col gap-4">
+        <NumberSlider settingKey="uiScale" label="界面缩放" min={0.85} max={1.15} step={0.01} unit="×" scheme={scheme} />
+        <NumberSlider settingKey="cardOpacity" label="卡片不透明度" min={0.6} max={1} step={0.02} unit="" scheme={scheme} />
+        <NumberSlider settingKey="coverRadius" label="封面圆角" min={0} max={24} step={1} unit="px" scheme={scheme} />
+
+        <div>
+          <div className="mb-2 text-sm font-medium" style={{ color: "var(--text-primary)" }}>滚动条样式</div>
+          <div className="flex gap-1.5">
+            {SCROLLBAR_OPTIONS.map((opt) => {
+              const active = scrollbarStyle === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => updateSetting("scrollbarStyle", opt.key)}
+                  className="flex-1 rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+                  style={{
+                    border: "1px solid",
+                    borderColor: active ? "var(--accent)" : "var(--border)",
+                    background: active ? "var(--accent-soft)" : "var(--surface)",
+                    color: "var(--text-primary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>迷你播放栏</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>缩小底部播放栏高度（开发中）</div>
+          </div>
+          <SimpleSwitch settingKey="miniPlayer" scheme={scheme} ariaLabel="迷你播放栏" />
+        </div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>音波可视化</div>
+            <div className="text-xs" style={{ color: "var(--text-secondary)" }}>播放时显示音波动画（开发中）</div>
+          </div>
+          <SimpleSwitch settingKey="showVisualizer" scheme={scheme} ariaLabel="音波可视化" />
+        </div>
       </div>
     </CollapsibleSection>
   );
@@ -934,6 +1224,8 @@ export default function Settings() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col gap-5">
           <AppearanceSection scheme={scheme} />
+          <BackgroundSection scheme={scheme} />
+          <InterfaceSection scheme={scheme} />
           <PlaybackSection scheme={scheme} />
           <QualitySection scheme={scheme} />
           <EQSection scheme={scheme} />

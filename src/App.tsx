@@ -21,6 +21,12 @@ export default function App() {
   const init = useAppStore((s) => s.init);
   const splashDuration = useAppStore((s) => s.settings.splashDuration);
 
+  // 界面自定义相关设置：单一订阅点，派发为 CSS 变量
+  const uiScale = useAppStore((s) => s.settings.uiScale);
+  const cardOpacity = useAppStore((s) => s.settings.cardOpacity);
+  const coverRadius = useAppStore((s) => s.settings.coverRadius);
+  const scrollbarStyle = useAppStore((s) => s.settings.scrollbarStyle);
+
   // 用于 NowPlaying 退出动画
   const [renderNowPlaying, setRenderNowPlaying] = useState(false);
   const [exitAnim, setExitAnim] = useState(false);
@@ -35,6 +41,15 @@ export default function App() {
   useEffect(() => {
     init();
   }, [init]);
+
+  // 应用界面自定义 CSS 变量到根元素
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--ui-scale", String(uiScale));
+    root.style.setProperty("--card-opacity", String(cardOpacity));
+    root.style.setProperty("--cover-radius", `${coverRadius}px`);
+    root.dataset.scrollbar = scrollbarStyle;
+  }, [uiScale, cardOpacity, coverRadius, scrollbarStyle]);
 
   // 启动屏结束后检查是否需要引导
   useEffect(() => {

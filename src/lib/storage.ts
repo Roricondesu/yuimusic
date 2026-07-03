@@ -142,4 +142,6 @@ export const STORAGE_KEYS = {
   downloads: "downloads",
   /** 已下载曲目元数据列表（Track 对象数组，不含 Blob 本身） */
   downloadedTracks: "downloadedTracks",
+  /** 自定义背景图片 Blob */
+  backgroundImage: "backgroundImage",
 } as const;

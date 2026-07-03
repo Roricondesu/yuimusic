@@ -63,6 +63,29 @@ body {
   color: var(--text-primary);
   background: var(--bg-base);
   overflow-x: hidden;
+  /* 界面缩放：影响根字号，rem 单位会随之缩放 */
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
+/* === 滚动条样式（由 data-scrollbar 属性切换） === */
+html[data-scrollbar="thin"] ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+html[data-scrollbar="thin"] ::-webkit-scrollbar-thumb {
+  background: var(--text-secondary);
+  border-radius: 3px;
+}
+html[data-scrollbar="thin"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+html[data-scrollbar="hidden"] ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+html[data-scrollbar="hidden"] * {
+  scrollbar-width: none;
 }
 
 /* page shell gives room for top nav and floating bottom player */
@@ -200,6 +223,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  opacity: var(--card-opacity, 1);
 }
 
 html.dark .solid-card {

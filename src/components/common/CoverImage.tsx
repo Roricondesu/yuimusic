@@ -32,6 +32,7 @@ export const CoverImage: React.FC<CoverImageProps> = ({
         className={`flex items-center justify-center ${className ?? ""}`}
         style={{
           background: "rgba(128,128,128,0.12)",
+          borderRadius: "var(--cover-radius, 12px)",
           ...style,
         }}
       >
@@ -45,7 +46,7 @@ export const CoverImage: React.FC<CoverImageProps> = ({
       src={src}
       alt={alt}
       className={className}
-      style={style}
+      style={{ borderRadius: "var(--cover-radius, 12px)", ...style }}
       onError={() => setError(true)}
     />
   );
