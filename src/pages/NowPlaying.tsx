@@ -18,16 +18,17 @@ import {
   Loader2,
   X,
   Mic2,
+  ListPlus,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
+import { GlassCard } from "../components/glass/GlassCard";
 import { SeekBar } from "../components/layout/SeekBar";
 import { formatTime } from "../utils/formatTime";
-import { sourceInfo } from "../utils/musicSources";
 import { SourceIcon } from "../components/common/SourceIcon";
 import { CoverImage } from "../components/common/CoverImage";
 import type { LyricLine, Track } from "../types";
 
-/* ---------- 歌词列表 ---------- */
+/* ---------- 歌词列表（三栏布局，当前行放大） ---------- */
 function LyricList({
   lyrics,
   loading,
@@ -77,6 +78,17 @@ function LyricList({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [lyrics, scrollRef]);
 
+  // 当前行字号放大 1.4x，邻近行递减
+  const sizeFor = useCallback(
+    (i: number) => {
+      const dist = Math.abs(i - currentIndex);
+      if (dist === 0) return Math.round(fontSize * 1.4);
+      if (dist === 1) return Math.round(fontSize * 1.05);
+      return fontSize;
+    },
+    [fontSize, currentIndex],
+  );
+
   const itemStyle = useCallback(
     (i: number): React.CSSProperties => {
       const active = i === currentIndex;
@@ -84,47 +96,50 @@ function LyricList({
       const baseColor = active
         ? "var(--text-primary)"
         : isDark
-          ? "rgba(255,255,255,0.35)"
-          : "rgba(0,0,0,0.35)";
+          ? "rgba(255,255,255,0.3)"
+          : "rgba(0,0,0,0.3)";
 
       if (active || effect === "none") {
         return {
-          fontSize,
+          fontSize: sizeFor(i),
           fontWeight: active ? 700 : 400,
-          color: baseColor,
-          transform: active ? "scale(1.04)" : "scale(1)",
+          color: active ? "var(--accent)" : baseColor,
+          transform: active ? "scale(1.02)" : "scale(1)",
+          lineHeight: 1.6,
         };
       }
       if (effect === "fade") {
         return {
-          fontSize,
+          fontSize: sizeFor(i),
           fontWeight: 400,
           color: baseColor,
-          opacity: Math.max(0.18, 1 - dist * 0.2),
+          opacity: Math.max(0.15, 1 - dist * 0.25),
           transform: "scale(1)",
+          lineHeight: 1.6,
         };
       }
       return {
-        fontSize,
+        fontSize: sizeFor(i),
         fontWeight: 400,
         color: baseColor,
-        opacity: Math.max(0.3, 1 - dist * 0.1),
-        filter: dist > 0 ? `blur(${Math.min(4, dist * 0.7)}px)` : undefined,
+        opacity: Math.max(0.25, 1 - dist * 0.12),
+        filter: dist > 0 ? `blur(${Math.min(3, dist * 0.5)}px)` : undefined,
         transform: "scale(1)",
+        lineHeight: 1.6,
       };
     },
-    [currentIndex, fontSize, effect, isDark],
+    [currentIndex, effect, isDark, sizeFor],
   );
 
   return (
     <div
       ref={scrollRef}
-      className="lyric-scroll flex-1 overflow-y-auto rounded-xl px-2"
+      className="lyric-scroll flex-1 overflow-y-auto"
       style={{
         maskImage:
-          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
+          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
         WebkitMaskImage:
-          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
+          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
       }}
     >
       {loading ? (
@@ -144,7 +159,7 @@ function LyricList({
             <p
               key={i}
               data-idx={i}
-              className="lyric-line cursor-pointer py-2.5 text-center transition-[color,opacity,filter,transform] duration-300"
+              className="lyric-line cursor-pointer py-2 text-center transition-[color,opacity,filter,transform,font-size] duration-500"
               onClick={() => onSeek(duration > 0 ? line.time / duration : 0)}
               style={itemStyle(i)}
             >
@@ -169,24 +184,21 @@ function VinylCover({
 }) {
   return (
     <div className="relative flex items-center justify-center">
-      {/* 唱片底盘 */}
       <div
         className="relative overflow-hidden rounded-full shadow-2xl"
         style={{
-          width: "min(62vw, 300px)",
-          height: "min(62vw, 300px)",
-          maxWidth: 300,
-          maxHeight: 300,
+          width: "min(50vw, 260px)",
+          height: "min(50vw, 260px)",
+          maxWidth: 260,
+          maxHeight: 260,
         }}
       >
-        {/* 黑胶纹理背景 */}
         <div
           className="absolute inset-0"
           style={{
             background: "radial-gradient(circle, #1a1a1a 30%, #0a0a0a 100%)",
           }}
         >
-          {/* 同心圆纹路 */}
           {Array.from({ length: 12 }).map((_, i) => (
             <div
               key={i}
@@ -198,8 +210,6 @@ function VinylCover({
             />
           ))}
         </div>
-
-        {/* 封面图（旋转） */}
         <div
           className="absolute inset-0 flex items-center justify-center"
           style={{
@@ -223,8 +233,6 @@ function VinylCover({
             />
           </div>
         </div>
-
-        {/* 中心孔 */}
         <div
           className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
           style={{
@@ -254,7 +262,7 @@ function QueuePanel({
 
   return (
     <div
-      className="absolute inset-0 z-20 flex flex-col"
+      className="absolute inset-0 z-30 flex flex-col"
       style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
       onClick={onClose}
     >
@@ -339,6 +347,7 @@ export default function NowPlaying() {
   const currentLyricIndex = useAppStore((s) => s.player.currentLyricIndex);
   const osuDownloadProgress = useAppStore((s) => s.player.osuDownloadProgress);
   const downloadProgress = useAppStore((s) => s.player.downloadProgress);
+  const playlists = useAppStore((s) => s.player.playlists);
 
   const togglePlay = useAppStore((s) => s.togglePlay);
   const nextTrack = useAppStore((s) => s.nextTrack);
@@ -354,13 +363,14 @@ export default function NowPlaying() {
   const downloadTrack = useAppStore((s) => s.downloadTrack);
   const isDownloaded = useAppStore((s) => s.isDownloaded);
   const removeDownloadedTrack = useAppStore((s) => s.removeDownloadedTrack);
+  const addToPlaylist = useAppStore((s) => s.addToPlaylist);
+  const isTrackInPlaylist = useAppStore((s) => s.isTrackInPlaylist);
 
   const scheme = theme === "dark" ? "dark" : "light";
   const isDark = scheme === "dark";
   const displayDuration = duration || currentTrack?.duration || 0;
   const isMuted = volume === 0;
   const liked = currentTrack ? isFavorite(currentTrack.id) : false;
-  const srcInfo = currentTrack ? sourceInfo(currentTrack.source) : null;
   const downloaded = currentTrack ? isDownloaded(currentTrack.id) : false;
   const dlProgress = currentTrack ? downloadProgress[currentTrack.id] : undefined;
 
@@ -368,6 +378,7 @@ export default function NowPlaying() {
   const lyricScrollRefMobile = useRef<HTMLDivElement>(null);
   const [mobilePage, setMobilePage] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
 
   const fontSize = useMemo(
     () =>
@@ -385,12 +396,12 @@ export default function NowPlaying() {
           ? "rgba(255,255,255,0.7)"
           : "rgba(0,0,0,0.65)",
       cursor: "pointer",
-      padding: 8,
-      borderRadius: 10,
+      padding: 6,
+      borderRadius: 8,
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      transition: "color 0.15s ease, transform 0.15s ease",
+      transition: "background 0.15s ease, color 0.15s ease, transform 0.15s ease",
     }),
     [isDark],
   );
@@ -404,9 +415,15 @@ export default function NowPlaying() {
     }
   };
 
+  const handleAddToPlaylist = (playlistId: string) => {
+    if (currentTrack) addToPlaylist(playlistId, currentTrack);
+    setShowPlaylistMenu(false);
+  };
+
   useEffect(() => {
     setMobilePage(0);
     setShowQueue(false);
+    setShowPlaylistMenu(false);
   }, [currentTrack?.id]);
 
   // 移动端水平滑动切换
@@ -480,6 +497,97 @@ export default function NowPlaying() {
     reduceMotion,
   };
 
+  const downloadBtn = (size: number) => {
+    if (downloaded) {
+      return (
+        <button
+          onClick={() => removeDownloadedTrack(currentTrack.id)}
+          style={iconBtn(true)}
+          aria-label="已下载，点击删除"
+          className="hover:scale-110"
+        >
+          <Check size={size} />
+        </button>
+      );
+    }
+    if (dlProgress !== undefined) {
+      return (
+        <div style={iconBtn(true)} aria-label="下载中">
+          <Loader2 size={size} className="animate-spin" />
+        </div>
+      );
+    }
+    return (
+      <button
+        onClick={handleDownload}
+        style={iconBtn()}
+        aria-label="下载"
+        className="hover:scale-110"
+      >
+        <Download size={size} />
+      </button>
+    );
+  };
+
+  const favBtn = (size: number) => (
+    <button
+      onClick={() => toggleFavorite(currentTrack)}
+      style={iconBtn(liked)}
+      aria-label="收藏"
+      className="hover:scale-110"
+    >
+      <Heart size={size} fill={liked ? "currentColor" : "none"} />
+    </button>
+  );
+
+  const playlistMenuBtn = (size: number) => (
+    <div style={{ position: "relative" }}>
+      <button
+        style={iconBtn()}
+        onClick={() => setShowPlaylistMenu((v) => !v)}
+        aria-label="加入歌单"
+        className="hover:scale-110"
+      >
+        <ListPlus size={size} />
+      </button>
+      {showPlaylistMenu && (
+        <div
+          className="absolute bottom-full right-0 mb-2 w-48 rounded-xl py-1 shadow-2xl z-20"
+          style={{
+            background: "var(--surface-elevated)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          {playlists.length === 0 ? (
+            <div className="px-3 py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+              还没有歌单
+            </div>
+          ) : (
+            playlists.map((pl) => {
+              const inList = isTrackInPlaylist(pl.id, currentTrack.id);
+              return (
+                <button
+                  key={pl.id}
+                  onClick={() => handleAddToPlaylist(pl.id)}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-xs"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    color: "var(--text-primary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span className="truncate">{pl.name}</span>
+                  {inList && <Check size={12} style={{ color: "var(--accent)" }} />}
+                </button>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
       className="absolute inset-0 z-[60] flex flex-col overflow-hidden"
@@ -496,7 +604,7 @@ export default function NowPlaying() {
           backgroundSize: "cover",
           backgroundPosition: "center",
           filter: "blur(80px)",
-          opacity: 0.3,
+          opacity: 0.25,
           transform: "scale(1.3)",
         }}
       />
@@ -505,20 +613,20 @@ export default function NowPlaying() {
         className="absolute inset-0"
         style={{
           background: isDark
-            ? "linear-gradient(180deg, rgba(9,9,12,0.4) 0%, rgba(9,9,12,0.7) 50%, rgba(9,9,12,0.9) 100%)"
-            : "linear-gradient(180deg, rgba(232,234,239,0.4) 0%, rgba(232,234,239,0.7) 50%, rgba(232,234,239,0.9) 100%)",
+            ? "linear-gradient(180deg, rgba(9,9,12,0.3) 0%, rgba(9,9,12,0.6) 100%)"
+            : "linear-gradient(180deg, rgba(232,234,239,0.3) 0%, rgba(232,234,239,0.6) 100%)",
         }}
       />
 
       {/* 顶部栏 */}
-      <div className="relative z-10 flex shrink-0 items-center justify-between px-4 pt-4 md:px-8 md:pt-6">
+      <div className="relative z-10 flex shrink-0 items-center justify-between px-4 pt-4 md:px-6 md:pt-5">
         <button
           onClick={() => setShowNowPlaying(false)}
           style={iconBtn()}
           aria-label="收起"
           className="hover:scale-110"
         >
-          <ChevronDown size={26} />
+          <ChevronDown size={24} />
         </button>
         <div className="text-center">
           <div
@@ -528,10 +636,11 @@ export default function NowPlaying() {
             正在播放
           </div>
           <div
-            className="max-w-[60vw] truncate text-xs font-medium"
+            className="flex max-w-[60vw] items-center justify-center gap-1.5 text-xs font-medium"
             style={{ color: "var(--text-primary)" }}
           >
-            {currentTrack.album || currentTrack.title}
+            <span className="truncate">{currentTrack.album || currentTrack.title}</span>
+            <SourceIcon source={currentTrack.source} size={10} />
           </div>
         </div>
         <button
@@ -544,34 +653,34 @@ export default function NowPlaying() {
         </button>
       </div>
 
-      {/* 主内容 */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 md:px-8">
-        {/* 桌面端：左右分栏 */}
-        <div className="hidden min-h-0 flex-1 grid-cols-2 items-center gap-10 md:grid">
-          {/* 左侧：唱片 + 信息 + 操作 */}
+      {/* 主内容区 */}
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 md:px-6">
+        {/* 桌面端：左中右三栏布局 */}
+        <div className="hidden min-h-0 flex-1 grid-cols-[1fr_1.2fr_1fr] items-center gap-6 md:grid">
+          {/* 左栏：上一首歌词（预览） */}
+          <div className="flex h-full min-h-0 flex-col justify-center">
+            <LyricList {...lyricProps} scrollRef={lyricScrollRef} />
+          </div>
+
+          {/* 中栏：封面 + 信息 */}
           <div className="flex h-full flex-col items-center justify-center gap-5">
             <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
 
-            <div className="flex w-full max-w-md flex-col items-center gap-2">
+            <div className="flex w-full max-w-sm flex-col items-center gap-2">
               <h1
-                className="flex items-center gap-2 text-xl font-bold md:text-2xl"
+                className="flex items-center gap-2 text-xl font-bold"
                 style={{ color: "var(--text-primary)" }}
               >
                 <span className="truncate">{currentTrack.title}</span>
                 <SourceIcon source={currentTrack.source} size={13} />
               </h1>
-              <p className="text-sm md:text-base" style={{ color: "var(--text-secondary)" }}>
+              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                 {currentTrack.artist}
               </p>
-              {srcInfo && (
-                <p className="text-[11px]" style={{ color: "var(--text-secondary)", opacity: 0.7 }}>
-                  {srcInfo.label}
-                </p>
-              )}
 
               {/* 下载进度条 */}
               {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
-                <div className="flex w-full max-w-xs items-center gap-2">
+                <div className="flex w-full max-w-xs items-center gap-2 mt-1">
                   <Loader2 size={12} className="animate-spin" style={{ color: "var(--accent)" }} />
                   <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-elevated)" }}>
                     <div
@@ -590,49 +699,15 @@ export default function NowPlaying() {
 
               {/* 操作按钮 */}
               <div className="mt-1 flex items-center gap-2">
-                <button
-                  onClick={() => toggleFavorite(currentTrack)}
-                  style={iconBtn(liked)}
-                  aria-label="收藏"
-                  className="hover:scale-110"
-                >
-                  <Heart size={22} fill={liked ? "currentColor" : "none"} />
-                </button>
-                {downloaded ? (
-                  <button
-                    onClick={() => removeDownloadedTrack(currentTrack.id)}
-                    style={iconBtn(true)}
-                    aria-label="已下载，点击删除"
-                    className="hover:scale-110"
-                  >
-                    <Check size={20} />
-                  </button>
-                ) : dlProgress !== undefined ? (
-                  <div style={iconBtn(true)} aria-label="下载中">
-                    <Loader2 size={20} className="animate-spin" />
-                  </div>
-                ) : (
-                  <button
-                    onClick={handleDownload}
-                    style={iconBtn()}
-                    aria-label="下载"
-                    className="hover:scale-110"
-                  >
-                    <Download size={20} />
-                  </button>
-                )}
+                {favBtn(20)}
+                {downloadBtn(20)}
+                {playlistMenuBtn(20)}
               </div>
             </div>
           </div>
 
-          {/* 右侧：歌词 */}
-          <div className="flex h-full min-h-0 flex-col">
-            <span
-              className="mb-2 text-xs font-medium uppercase tracking-wider"
-              style={{ color: "var(--text-secondary)" }}
-            >
-              歌词
-            </span>
+          {/* 右栏：下一首歌词（预览） */}
+          <div className="flex h-full min-h-0 flex-col justify-center">
             <LyricList {...lyricProps} scrollRef={lyricScrollRef} />
           </div>
         </div>
@@ -660,13 +735,7 @@ export default function NowPlaying() {
                 <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                   {currentTrack.artist}
                 </p>
-                {srcInfo && (
-                  <p className="text-[10px]" style={{ color: "var(--text-secondary)", opacity: 0.7 }}>
-                    {srcInfo.label}
-                  </p>
-                )}
 
-                {/* 下载进度条 */}
                 {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
                   <div className="flex w-full max-w-xs items-center gap-2 mt-1">
                     <Loader2 size={12} className="animate-spin" style={{ color: "var(--accent)" }} />
@@ -685,39 +754,10 @@ export default function NowPlaying() {
                   </div>
                 )}
 
-                {/* 操作按钮 */}
                 <div className="mt-2 flex items-center gap-3">
-                  <button
-                    onClick={() => toggleFavorite(currentTrack)}
-                    style={iconBtn(liked)}
-                    aria-label="收藏"
-                    className="hover:scale-110"
-                  >
-                    <Heart size={20} fill={liked ? "currentColor" : "none"} />
-                  </button>
-                  {downloaded ? (
-                    <button
-                      onClick={() => removeDownloadedTrack(currentTrack.id)}
-                      style={iconBtn(true)}
-                      aria-label="已下载，点击删除"
-                      className="hover:scale-110"
-                    >
-                      <Check size={18} />
-                    </button>
-                  ) : dlProgress !== undefined ? (
-                    <div style={iconBtn(true)} aria-label="下载中">
-                      <Loader2 size={18} className="animate-spin" />
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleDownload}
-                      style={iconBtn()}
-                      aria-label="下载"
-                      className="hover:scale-110"
-                    >
-                      <Download size={18} />
-                    </button>
-                  )}
+                  {favBtn(20)}
+                  {downloadBtn(18)}
+                  {playlistMenuBtn(18)}
                 </div>
 
                 {mobilePage === 0 && (
@@ -770,66 +810,164 @@ export default function NowPlaying() {
         </div>
       </div>
 
-      {/* 底部控制 */}
-      <div className="relative z-10 shrink-0 px-4 pb-6 md:px-10 md:pb-8">
-        {/* 进度条 */}
-        <div className="mb-4 flex items-center gap-3">
-          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)", width: 38, textAlign: "right", flexShrink: 0 }}>
-            {formatTime(currentTime)}
-          </span>
-          <div className="flex flex-1 items-center" style={{ minHeight: 28 }}>
-            <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} thumbHeight={18} height={5} />
-          </div>
-          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)", width: 38, flexShrink: 0 }}>
-            {formatTime(displayDuration)}
-          </span>
-        </div>
+      {/* 底部玻璃播放栏（沿用 BottomPlayer 风格） */}
+      <div className="relative z-20 shrink-0 px-3 pb-3 md:px-6 md:pb-5">
+        <GlassCard
+          scheme={scheme}
+          style={{
+            borderRadius: 20,
+            padding: "12px 16px",
+            maxWidth: "min(calc(100vw - 24px), 1100px)",
+            margin: "0 auto",
+          }}
+        >
+          {/* 桌面端控制栏 */}
+          <div className="hidden md:flex md:items-center md:justify-center">
+            <div className="flex w-full items-center gap-4">
+              {/* 左：封面信息 */}
+              <div className="flex min-w-0 items-center gap-3" style={{ width: 240, flexShrink: 0 }}>
+                <div
+                  className="shrink-0 overflow-hidden rounded-lg"
+                  style={{ width: 44, height: 44, background: "rgba(128,128,128,0.15)" }}
+                >
+                  <CoverImage
+                    src={currentTrack.cover}
+                    alt={currentTrack.title}
+                    className="h-full w-full object-cover"
+                    iconSize={18}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                      {currentTrack.title}
+                    </span>
+                    <SourceIcon source={currentTrack.source} size={11} />
+                  </div>
+                  <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {currentTrack.artist}
+                  </div>
+                </div>
+              </div>
 
-        {/* 控制按钮 */}
-        <div className="flex items-center justify-center gap-5 md:gap-10">
-          <button style={iconBtn(shuffle)} onClick={toggleShuffle} aria-label="随机播放" className="hidden md:inline-flex hover:scale-110">
-            <Shuffle size={20} />
-          </button>
-          <button style={iconBtn()} onClick={prevTrack} aria-label="上一首" className="hover:scale-110">
-            <SkipBack size={26} fill="currentColor" />
-          </button>
-          <button
-            onClick={togglePlay}
-            aria-label={isPlaying ? "暂停" : "播放"}
-            style={{
-              border: "none",
-              background: "var(--accent)",
-              color: "#fff",
-              cursor: "pointer",
-              padding: 16,
-              borderRadius: "50%",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              transition: "transform 0.15s ease",
-              boxShadow: "0 4px 20px var(--accent-soft)",
-            }}
-            className="hover:scale-105"
-          >
-            {isPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
-          </button>
-          <button style={iconBtn()} onClick={nextTrack} aria-label="下一首" className="hover:scale-110">
-            <SkipForward size={26} fill="currentColor" />
-          </button>
-          <button style={iconBtn(repeat !== "off")} onClick={cycleRepeat} aria-label="循环" className="hidden md:inline-flex hover:scale-110">
-            {repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />}
-          </button>
-        </div>
+              {/* 中：控制 + 进度 */}
+              <div className="flex flex-1 flex-col items-center gap-1">
+                <div className="flex items-center justify-center gap-2">
+                  <button style={iconBtn(shuffle)} onClick={toggleShuffle} aria-label="随机播放" className="hover:scale-110">
+                    <Shuffle size={16} />
+                  </button>
+                  <button style={iconBtn()} onClick={prevTrack} aria-label="上一首" className="hover:scale-110">
+                    <SkipBack size={20} />
+                  </button>
+                  <button
+                    onClick={togglePlay}
+                    aria-label={isPlaying ? "暂停" : "播放"}
+                    style={{
+                      border: "none",
+                      background: "var(--accent)",
+                      color: "#fff",
+                      cursor: "pointer",
+                      padding: 10,
+                      borderRadius: "50%",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "transform 0.15s ease",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                    }}
+                    className="hover:scale-105"
+                  >
+                    {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                  </button>
+                  <button style={iconBtn()} onClick={nextTrack} aria-label="下一首" className="hover:scale-110">
+                    <SkipForward size={20} />
+                  </button>
+                  <button style={iconBtn(repeat !== "off")} onClick={cycleRepeat} aria-label={`循环: ${repeat}`} className="hover:scale-110">
+                    {repeat === "one" ? <Repeat1 size={16} /> : <Repeat size={16} />}
+                  </button>
+                </div>
+                {/* 进度条 */}
+                <div className="flex w-full items-center gap-2">
+                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 32, textAlign: "right", flexShrink: 0 }}>
+                    {formatTime(currentTime)}
+                  </span>
+                  <div className="flex flex-1 items-center" style={{ minHeight: 20 }}>
+                    <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} />
+                  </div>
+                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 32, flexShrink: 0 }}>
+                    {formatTime(displayDuration)}
+                  </span>
+                </div>
+              </div>
 
-        {/* 音量（桌面） */}
-        <div className="mt-4 hidden items-center justify-center gap-2 md:flex">
-          <button style={iconBtn(isMuted)} onClick={() => setVolume(isMuted ? 0.8 : 0)} aria-label="静音">
-            {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
-          <div className="flex items-center" style={{ width: 140, minHeight: 28 }}>
-            <SeekBar progress={volume} onSeek={setVolume} scheme={scheme} thumbHeight={18} height={5} />
+              {/* 右：音量 + 操作 */}
+              <div className="flex items-center gap-1" style={{ width: 160, flexShrink: 0, justifyContent: "flex-end" }}>
+                {favBtn(16)}
+                {downloadBtn(16)}
+                <button style={iconBtn(isMuted)} onClick={() => setVolume(isMuted ? 0.8 : 0)} aria-label={isMuted ? "取消静音" : "静音"}>
+                  {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                </button>
+                <div style={{ width: 70 }}>
+                  <SeekBar progress={volume} onSeek={setVolume} scheme={scheme} />
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+
+          {/* 移动端控制栏 */}
+          <div className="flex flex-col md:hidden">
+            <div className="flex items-center gap-2" style={{ justifyContent: "space-between" }}>
+              <div className="min-w-0 flex-1" style={{ minWidth: 80 }}>
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+                    {currentTrack.title}
+                  </span>
+                  <SourceIcon source={currentTrack.source} size={11} />
+                </div>
+                <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
+                  {currentTrack.artist}
+                </div>
+              </div>
+              <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
+                {favBtn(16)}
+                {downloadBtn(16)}
+                <button style={iconBtn()} onClick={prevTrack} aria-label="上一首">
+                  <SkipBack size={18} />
+                </button>
+                <button
+                  onClick={togglePlay}
+                  aria-label={isPlaying ? "暂停" : "播放"}
+                  style={{
+                    border: "none",
+                    background: "var(--accent)",
+                    color: "#fff",
+                    cursor: "pointer",
+                    padding: 9,
+                    borderRadius: "50%",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+                  }}
+                >
+                  {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
+                </button>
+                <button style={iconBtn()} onClick={nextTrack} aria-label="下一首">
+                  <SkipForward size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 28, textAlign: "right", flexShrink: 0 }}>
+                {formatTime(currentTime)}
+              </span>
+              <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} />
+              <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 28, flexShrink: 0 }}>
+                {formatTime(displayDuration)}
+              </span>
+            </div>
+          </div>
+        </GlassCard>
       </div>
 
       {/* 播放队列面板 */}

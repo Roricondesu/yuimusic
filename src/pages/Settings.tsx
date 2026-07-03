@@ -283,7 +283,7 @@ const SourceSection = memo(function SourceSection() {
         <div className="flex gap-2">
           {([
             { key: "sayobot", label: "Sayobot（国内）", desc: "mini 版，体积最小，CDN 加速" },
-            { key: "osu.direct", label: "osu.direct（海外）", desc: "完整版，海外节点" },
+            { key: "osu.direct", label: "osu.direct（海外）", desc: "海外节点" },
           ] as const).map((opt) => {
             const active = osuMirror === opt.key;
             return (

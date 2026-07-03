@@ -694,15 +694,15 @@ export const sourceInfo = (
       };
     case "audius":
       return {
-        label: "Audius · 完整免费音乐",
-        short: "完整",
+        label: "Audius · 免费音乐",
+        short: "Audius",
         copyright: false,
         full: true,
       };
     case "jamendo":
       return {
-        label: "Jamendo · CC 授权完整音乐",
-        short: "完整",
+        label: "Jamendo · CC 授权音乐",
+        short: "Jamendo",
         copyright: false,
         full: true,
       };

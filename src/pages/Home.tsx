@@ -475,7 +475,7 @@ export default function Home() {
             </div>
           )}
 
-          {/* 完整版专区 */}
+          {/* 精选推荐 */}
           <div
             className={`solid-card ${playlists.length > 0 ? "md:col-span-7" : "md:col-span-12"}`}
             style={{ padding: 0 }}
@@ -483,10 +483,10 @@ export default function Home() {
             <div className="p-4">
               <SectionHeader
                 icon={<Music2 size={16} />}
-                title="完整版推荐"
+                title="精选推荐"
                 action={
                   <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
-                    无需担心 30 秒中断
+                    好歌不间断
                   </span>
                 }
               />
