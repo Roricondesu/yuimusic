@@ -13,11 +13,15 @@ import {
   AlignCenter,
   AlignRight,
   Type,
+  RefreshCw,
+  Upload,
+  Languages,
+  Trash2,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { SourceIcon } from "../components/common/SourceIcon";
 import { CoverImage } from "../components/common/CoverImage";
-import type { LyricLine, Track } from "../types";
+import type { LyricLine, Track, LyricLanguage } from "../types";
 
 /* ---------- 歌词列表 ---------- */
 function LyricList({
@@ -267,6 +271,7 @@ function LyricList({
         >
           {lyrics.map((line, i) => {
             const active = i === currentIndex;
+            const hasTranslation = Boolean(line.translation);
             return (
               <p
                 key={i}
@@ -286,7 +291,21 @@ function LyricList({
                 }}
                 onClick={() => onSeek(duration > 0 ? line.time / duration : 0)}
               >
-                {line.text || "♪"}
+                <span>{line.text || "♪"}</span>
+                {hasTranslation && (
+                  <span
+                    className="block"
+                    style={{
+                      marginTop: 4,
+                      fontSize: "0.72em",
+                      fontWeight: active ? 500 : 400,
+                      opacity: active ? 0.92 : 0.7,
+                      letterSpacing: "0.01em",
+                    }}
+                  >
+                    {line.translation}
+                  </span>
+                )}
               </p>
             );
           })}
@@ -735,9 +754,13 @@ export default function NowPlaying() {
   const lyricLetterSpacing = useAppStore((s) => s.settings.lyricLetterSpacing);
   const lyricLineHeight = useAppStore((s) => s.settings.lyricLineHeight);
   const reduceMotion = useAppStore((s) => s.settings.reduceMotion);
+  const lyricLanguage = useAppStore((s) => s.settings.lyricLanguage);
+  const showLyricSource = useAppStore((s) => s.settings.showLyricSource);
   const lyrics = useAppStore((s) => s.player.lyrics);
   const lyricsLoading = useAppStore((s) => s.player.lyricsLoading);
   const currentLyricIndex = useAppStore((s) => s.player.currentLyricIndex);
+  const lyricSourceLabel = useAppStore((s) => s.player.lyricSourceLabel);
+  const fetchedLyrics = useAppStore((s) => s.player.fetchedLyrics);
   const osuDownloadProgress = useAppStore((s) => s.player.osuDownloadProgress);
   const downloadProgress = useAppStore((s) => s.player.downloadProgress);
 
@@ -748,17 +771,30 @@ export default function NowPlaying() {
   const downloadTrack = useAppStore((s) => s.downloadTrack);
   const isDownloaded = useAppStore((s) => s.isDownloaded);
   const removeDownloadedTrack = useAppStore((s) => s.removeDownloadedTrack);
+  const reloadLyrics = useAppStore((s) => s.reloadLyrics);
+  const importLyricFile = useAppStore((s) => s.importLyricFile);
+  const removeManualLyric = useAppStore((s) => s.removeManualLyric);
+  const switchLyricLanguage = useAppStore((s) => s.switchLyricLanguage);
+  const switchTrackSource = useAppStore((s) => s.switchTrackSource);
+  const updateSetting = useAppStore((s) => s.updateSetting);
 
   const isDark = theme === "dark";
   const liked = currentTrack ? isFavorite(currentTrack.id) : false;
   const downloaded = currentTrack ? isDownloaded(currentTrack.id) : false;
   const dlProgress = currentTrack ? downloadProgress[currentTrack.id] : undefined;
+  const hasTranslation = (fetchedLyrics?.translationLines?.length || 0) > 0;
+  const isManualLrc = lyricSourceLabel === "本地导入";
+  const alternatives = currentTrack?.alternatives || [];
 
   const lyricScrollRef = useRef<HTMLDivElement>(null);
   const lyricScrollRefMobile = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [mobilePage, setMobilePage] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
   const [showLyricSettings, setShowLyricSettings] = useState(false);
+  const [showLangMenu, setShowLangMenu] = useState(false);
+  const [showSourceMenu, setShowSourceMenu] = useState(false);
+  const [lyricBusy, setLyricBusy] = useState(false);
 
   const fontSize = useMemo(
     () =>
@@ -810,6 +846,57 @@ export default function NowPlaying() {
       // 静默失败
     }
   };
+
+  // 重新获取歌词（绕过缓存）
+  const handleReloadLyrics = async () => {
+    if (!currentTrack || lyricBusy) return;
+    setLyricBusy(true);
+    try {
+      await reloadLyrics();
+    } finally {
+      setLyricBusy(false);
+    }
+  };
+
+  // 导入本地 .lrc 文件
+  const handleImportLrc = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允许重复选择同一文件
+    if (!file) return;
+    setLyricBusy(true);
+    try {
+      const text = await file.text();
+      await importLyricFile(text);
+    } finally {
+      setLyricBusy(false);
+    }
+  };
+
+  // 清除本地导入的歌词
+  const handleRemoveManualLrc = async () => {
+    if (lyricBusy) return;
+    setLyricBusy(true);
+    try {
+      await removeManualLyric();
+    } finally {
+      setLyricBusy(false);
+    }
+  };
+
+  // 关闭弹层（语言/来源菜单）的统一处理
+  useEffect(() => {
+    if (!showLangMenu && !showSourceMenu) return;
+    const close = () => {
+      setShowLangMenu(false);
+      setShowSourceMenu(false);
+    };
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [showLangMenu, showSourceMenu]);
 
   useEffect(() => {
     setMobilePage(0);
@@ -926,6 +1013,198 @@ export default function NowPlaying() {
     );
   };
 
+  // 语言选项配置
+  const LANG_OPTIONS: { key: LyricLanguage; label: string }[] = [
+    { key: "original", label: "原文" },
+    { key: "translation", label: "译文" },
+    { key: "bilingual", label: "双语" },
+  ];
+
+  // 歌词工具栏：来源徽标 + 语言切换 + 重新获取 + 导入 .lrc + 清除本地
+  const renderLyricToolbar = () => (
+    <div className="flex items-center gap-1">
+      {/* 来源徽标 */}
+      {showLyricSource && lyricSourceLabel && (
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{
+            background: isManualLrc ? "var(--accent-soft)" : "var(--surface-elevated)",
+            color: isManualLrc ? "var(--accent)" : "var(--text-secondary)",
+          }}
+        >
+          {lyricSourceLabel}
+        </span>
+      )}
+
+      {/* 语言切换（仅有译文时才显示） */}
+      {hasTranslation && (
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowLangMenu((v) => !v);
+              setShowSourceMenu(false);
+            }}
+            style={iconBtn(lyricLanguage !== "original")}
+            aria-label="歌词语言"
+            className="press-silk"
+            title="歌词语言"
+          >
+            <Languages size={16} />
+          </button>
+          {showLangMenu && (
+            <div
+              className="sheet-enter absolute right-0 top-full z-40 mt-1 min-w-[88px] overflow-hidden rounded-xl py-1"
+              style={{
+                background: "var(--surface)",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+                border: "1px solid var(--border)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {LANG_OPTIONS.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => {
+                    switchLyricLanguage(opt.key);
+                    updateSetting("lyricLanguage", opt.key);
+                    setShowLangMenu(false);
+                  }}
+                  className="flex w-full items-center justify-between px-3 py-2 text-xs transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    color: lyricLanguage === opt.key ? "var(--accent)" : "var(--text-primary)",
+                    fontWeight: lyricLanguage === opt.key ? 600 : 400,
+                  }}
+                >
+                  {opt.label}
+                  {lyricLanguage === opt.key && <Check size={12} />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 重新获取歌词 */}
+      <button
+        onClick={handleReloadLyrics}
+        style={iconBtn()}
+        aria-label="重新获取歌词"
+        className="press-silk"
+        title="重新获取歌词"
+        disabled={lyricBusy}
+      >
+        {lyricBusy ? (
+          <Loader2 size={16} className="animate-spin" />
+        ) : (
+          <RefreshCw size={16} />
+        )}
+      </button>
+
+      {/* 导入本地 .lrc */}
+      <button
+        onClick={handleImportLrc}
+        style={iconBtn(isManualLrc)}
+        aria-label="导入本地歌词"
+        className="press-silk"
+        title="导入本地 .lrc 歌词"
+        disabled={lyricBusy}
+      >
+        <Upload size={16} />
+      </button>
+
+      {/* 清除本地导入的歌词（仅本地导入时显示） */}
+      {isManualLrc && (
+        <button
+          onClick={handleRemoveManualLrc}
+          style={iconBtn()}
+          aria-label="清除本地歌词"
+          className="press-silk"
+          title="清除本地导入的歌词"
+          disabled={lyricBusy}
+        >
+          <Trash2 size={16} />
+        </button>
+      )}
+    </div>
+  );
+
+  // 同曲目来源切换器（当存在 alternatives 时显示）
+  const renderSourceSwitcher = () => {
+    if (alternatives.length === 0) return null;
+    const allVariants = [currentTrack, ...alternatives].filter((t): t is Track => !!t);
+    return (
+      <div className="relative">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowSourceMenu((v) => !v);
+            setShowLangMenu(false);
+          }}
+          className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors"
+          style={{
+            border: "1px solid var(--border)",
+            background: "var(--surface-elevated)",
+            color: "var(--text-secondary)",
+            cursor: "pointer",
+          }}
+          title="切换来源"
+        >
+          <SourceIcon source={currentTrack.source} size={10} />
+          <span>{allVariants.length} 源</span>
+        </button>
+        {showSourceMenu && (
+          <div
+            className="sheet-enter absolute left-0 top-full z-40 mt-1 min-w-[180px] overflow-hidden rounded-xl py-1"
+            style={{
+              background: "var(--surface)",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
+              border: "1px solid var(--border)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+              同曲目不同来源
+            </div>
+            {allVariants.map((t) => {
+              const active = t.id === currentTrack.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    if (!active) switchTrackSource(t);
+                    setShowSourceMenu(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  style={{
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <SourceIcon source={t.source} size={12} />
+                  <span
+                    className="flex-1 truncate text-xs"
+                    style={{
+                      color: active ? "var(--accent)" : "var(--text-primary)",
+                      fontWeight: active ? 600 : 400,
+                    }}
+                  >
+                    {t.preview ? "试听" : "完整"}
+                  </span>
+                  {active && <Check size={12} style={{ color: "var(--accent)" }} />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
       className="absolute inset-0 z-[55] flex flex-col overflow-hidden"
@@ -1010,6 +1289,7 @@ export default function NowPlaying() {
               <p className="text-sm md:text-base" style={{ color: "var(--text-secondary)" }}>
                 {currentTrack.artist}
               </p>
+              {renderSourceSwitcher()}
 
               {/* 下载进度条 */}
               {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
@@ -1055,14 +1335,15 @@ export default function NowPlaying() {
 
           {/* 右侧：歌词 */}
           <div className="flex h-full min-h-0 flex-col">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between gap-2">
               <button
                 onClick={() => setShowLyricSettings(true)}
-                className="flex items-center gap-1 text-xs"
+                className="flex shrink-0 items-center gap-1 text-xs"
                 style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
               >
                 <Type size={12} /> 歌词样式
               </button>
+              {renderLyricToolbar()}
             </div>
             <LyricList {...lyricProps} scrollRef={lyricScrollRef} />
           </div>
@@ -1086,6 +1367,7 @@ export default function NowPlaying() {
                 <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
                   {currentTrack.artist}
                 </p>
+                {renderSourceSwitcher()}
 
                 {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
                   <div className="flex w-full max-w-xs items-center gap-2 mt-1">
@@ -1136,17 +1418,11 @@ export default function NowPlaying() {
           {/* 歌词页 */}
           {mobilePage === 1 && (
             <div className="sheet-enter flex h-full min-h-0 flex-col overflow-hidden pl-3">
-              <div className="mb-2 flex shrink-0 items-center justify-between">
-                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
+              <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                <span className="shrink-0 text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
                   歌词
                 </span>
-                <button
-                  onClick={() => setShowLyricSettings(true)}
-                  className="flex items-center gap-0.5 text-xs"
-                  style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
-                >
-                  <Type size={12} /> 样式
-                </button>
+                {renderLyricToolbar()}
               </div>
               <LyricList {...lyricProps} scrollRef={lyricScrollRefMobile} />
             </div>
@@ -1190,6 +1466,15 @@ export default function NowPlaying() {
       {showLyricSettings && (
         <LyricSettingsPanel onClose={() => setShowLyricSettings(false)} />
       )}
+
+      {/* 隐藏的 .lrc 文件输入 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".lrc,.txt"
+        onChange={handleFileChange}
+        style={{ display: "none" }}
+      />
     </div>
   );
 }

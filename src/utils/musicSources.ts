@@ -491,6 +491,58 @@ const interleaveByRelevance = (lists: Track[][]): Track[] => {
 };
 
 /**
+ * 标准化曲目标识：小写 + 去符号 + 合并空格，用于判断「同曲目」。
+ * 名字+歌手相同即视为同曲目（不同来源）。
+ */
+const normalizeTrackKey = (artist: string, title: string): string => {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\w\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff\s]/g, " ")
+      .replace(/[\s\-_]+/g, " ")
+      .trim();
+  // 去掉标题常见噪声（feat/remix 等）
+  const cleanT = title
+    .replace(/\(feat\.?[^)]*\)/gi, "")
+    .replace(/\(ft\.?[^)]*\)/gi, "")
+    .replace(/\[[^\]]*(remix|edit|mix|version|live|acoustic)[^\]]*\]/gi, "")
+    .replace(/\([^)]*(remix|edit|mix|version|live|acoustic|official|video)[^)]*\)/gi, "")
+    .trim();
+  return `${norm(artist)}::${norm(cleanT)}`;
+};
+
+/**
+ * 将搜索结果按 artist+title 合并：同曲目不同来源归为主 Track 的 alternatives。
+ * 保留首选来源（完整版权优先于试听）作为主版本，其余作为备选。
+ */
+const mergeSameTracks = (tracks: Track[]): Track[] => {
+  const map = new Map<string, Track>();
+  for (const t of tracks) {
+    const key = normalizeTrackKey(t.artist, t.title);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { ...t, alternatives: [] });
+    } else {
+      // 优先级：完整 > 试听；同优先级保留先出现的
+      const existingFull = !existing.preview;
+      const newFull = !t.preview;
+      const alt = { ...t, alternatives: [] };
+      if (!existingFull && newFull) {
+        // 新的是完整版，替换主版本
+        map.set(key, { ...alt, alternatives: [existing, ...(existing.alternatives || [])] });
+      } else {
+        // 否则作为备选加入
+        if (!existing.alternatives) existing.alternatives = [];
+        existing.alternatives.push(alt);
+      }
+    }
+  }
+  return [...map.values()];
+};
+
+/**
  * 对单个源使用一组查询词并行搜索，返回按查询词顺序、保留各 API 相关度顺序的曲目。
  * 用于 CJK 查询扩展：原词 + 艺人拉丁别名同时搜索，提高命中率；原词结果优先，别名结果补充。
  */
@@ -670,8 +722,10 @@ export const searchTracks = async (
     ...interleaved,
     ...(itunes.status === "fulfilled" ? itunes.value : []),
   ];
+  // 同曲目（名字+歌手相同）合并为多来源，完整版权优先于试听
+  const merged = mergeSameTracks(tracks);
   return {
-    tracks,
+    tracks: merged,
     partial:
       audius.status === "rejected" ||
       jamendo.status === "rejected" ||

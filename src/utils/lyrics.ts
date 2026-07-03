@@ -1,4 +1,5 @@
-import type { LyricLine } from "../types";
+import type { LyricLine, FetchedLyrics } from "../types";
+import { getItem, setItem, STORAGE_KEYS } from "../lib/storage";
 
 /**
  * 歌词获取与解析模块
@@ -18,9 +19,17 @@ import type { LyricLine } from "../types";
  */
 
 const LRU_CACHE_SIZE = 50;
-const lyricCache = new Map<string, LyricLine[]>();
 const LOCALSTORAGE_KEY = "yui-lyrics-cache";
 const LOCALSTORAGE_MAX = 200; // localStorage 最多缓存 200 首歌词
+
+/** 缓存项：携带原文、译文与来源标签 */
+interface CachedLyrics {
+  lines: LyricLine[];
+  translationLines: LyricLine[];
+  sourceLabel: string;
+}
+
+const lyricCache = new Map<string, CachedLyrics>();
 
 /** 网易云歌词源超时（毫秒） */
 const NETEASE_TIMEOUT = 8000;
@@ -40,11 +49,11 @@ const NETEASE_HEADERS = {
 
 // === localStorage 持久缓存 ===
 
-const loadLocalCache = (): Map<string, LyricLine[]> => {
+const loadLocalCache = (): Map<string, CachedLyrics> => {
   try {
     const raw = localStorage.getItem(LOCALSTORAGE_KEY);
     if (!raw) return new Map();
-    const obj = JSON.parse(raw) as Record<string, LyricLine[]>;
+    const obj = JSON.parse(raw) as Record<string, CachedLyrics>;
     return new Map(Object.entries(obj));
   } catch {
     return new Map();
@@ -186,7 +195,7 @@ const ensureCacheSize = () => {
   if (first !== undefined) lyricCache.delete(first);
 };
 
-const getCached = (artist: string, title: string) => {
+const getCached = (artist: string, title: string): CachedLyrics | undefined => {
   const key = cacheKey(artist, title);
   // 先查内存缓存
   const mem = lyricCache.get(key);
@@ -202,11 +211,11 @@ const getCached = (artist: string, title: string) => {
   return undefined;
 };
 
-const setCached = (artist: string, title: string, lyrics: LyricLine[]) => {
+const setCached = (artist: string, title: string, value: CachedLyrics) => {
   ensureCacheSize();
   const key = cacheKey(artist, title);
-  lyricCache.set(key, lyrics);
-  localCache.set(key, lyrics);
+  lyricCache.set(key, value);
+  localCache.set(key, value);
   saveLocalCache();
 };
 
@@ -677,12 +686,12 @@ const searchNetease = async (queries: string[]): Promise<NeteaseSong[]> => {
     .filter((s, i, arr) => arr.findIndex((x) => x.id === s.id) === i);
 };
 
-/** 从网易云获取歌词（搜索 → 匹配 → 获取歌词） */
+/** 从网易云获取歌词（搜索 → 匹配 → 获取歌词），同时捕获译文 */
 const fetchFromNetease = async (
   artist: string,
   title: string,
   duration: number,
-): Promise<LyricLine[]> => {
+): Promise<{ lines: LyricLine[]; translationLines: LyricLine[] }> => {
   // 同时获取 MusicBrainz work 别名（跨语言标题）和构造常规查询
   const [queries, aliases] = await Promise.all([
     Promise.resolve(buildSearchQueries(artist, title)),
@@ -698,7 +707,7 @@ const fetchFromNetease = async (
   const songs = await searchNetease(allQueries);
   const best = pickBestNeteaseSong(songs, artist, title, duration, aliases);
 
-  if (!best) return [];
+  if (!best) return { lines: [], translationLines: [] };
 
   // 获取歌词
   const lyricUrl = buildNeteaseUrl("/api/song/lyric", {
@@ -708,18 +717,26 @@ const fetchFromNetease = async (
     tv: "-1", // 翻译歌词
   });
   const lyricRes = await fetch(lyricUrl, { headers: NETEASE_HEADERS });
-  if (!lyricRes.ok) return [];
+  if (!lyricRes.ok) return { lines: [], translationLines: [] };
   const lyricData = (await lyricRes.json()) as NeteaseLyricResponse;
 
   // 优先使用 LRC 同步歌词
   const lrc = lyricData?.lrc?.lyric;
+  let lines: LyricLine[] = [];
   if (lrc) {
     const parsed = parseLRC(lrc);
-    if (parsed.length > 0) return parsed;
+    if (parsed.length > 0) lines = parsed;
   }
 
-  // 没有同步歌词，返回空（网易云一般都有 LRC 格式）
-  return [];
+  // 译文（tlyric）
+  let translationLines: LyricLine[] = [];
+  const tlyric = lyricData?.tlyric?.lyric;
+  if (tlyric) {
+    const parsedT = parseLRC(tlyric);
+    if (parsedT.length > 0) translationLines = parsedT;
+  }
+
+  return { lines, translationLines };
 };
 
 // === 酷狗音乐歌词源 ===
@@ -894,13 +911,118 @@ const fetchFromKugou = async (
 
 export type LyricsSource = "auto" | "lrclib" | "netease" | "kugou";
 
+/** 来源标签 */
+const SOURCE_LABELS: Record<LyricsSource, string> = {
+  auto: "智能竞速",
+  lrclib: "LRCLIB",
+  netease: "网易云",
+  kugou: "酷狗",
+};
+
 /**
- * 获取歌词
+ * 按时间戳把译文合并进原文行（双语模式）。
+ * 译文行用最近且不晚于原文行的时间戳匹配；匹配不到则留空。
+ */
+export const mergeTranslation = (
+  lines: LyricLine[],
+  translationLines: LyricLine[],
+): LyricLine[] => {
+  if (!translationLines.length) return lines;
+  // 译文按时间排序，便于二分查找
+  const sorted = [...translationLines].sort((a, b) => a.time - b.time);
+  return lines.map((line) => {
+    // 找到时间 <= line.time 的最后一行译文
+    let lo = 0;
+    let hi = sorted.length - 1;
+    let matched: string | undefined;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid].time <= line.time) {
+        matched = sorted[mid].text;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (matched !== undefined) {
+      return { ...line, translation: matched };
+    }
+    return line;
+  });
+};
+
+/**
+ * 根据语言模式从 FetchedLyrics 构造最终展示的 LyricLine[]。
+ * - original：仅原文
+ * - translation：仅译文（无译文则回退原文）
+ * - bilingual：原文 + 译文合并（无译文则仅原文）
+ */
+export const applyLyricLanguage = (
+  fetched: FetchedLyrics,
+  language: "original" | "translation" | "bilingual",
+): LyricLine[] => {
+  if (language === "translation" && fetched.translationLines.length) {
+    return fetched.translationLines;
+  }
+  if (language === "bilingual") {
+    return mergeTranslation(fetched.lines, fetched.translationLines);
+  }
+  return fetched.lines;
+};
+
+/** 构造曲目键（与缓存键一致，用于手动 LRC 持久化） */
+export const trackLyricKey = (artist: string, title: string): string =>
+  cacheKey(cleanArtist(artist), cleanTitle(title));
+
+/**
+ * 保存用户手动导入的 .lrc 文本到 IndexedDB，按 artist+title 键存储。
+ * 同时写入 lyrics 缓存，使其立即生效。
+ */
+export const saveManualLrc = async (
+  artist: string,
+  title: string,
+  lrcText: string,
+): Promise<LyricLine[]> => {
+  const lines = parseLRC(lrcText);
+  const key = trackLyricKey(artist, title);
+  await setItem(`${STORAGE_KEYS.manualLrc}:${key}`, lrcText);
+  const cached: CachedLyrics = {
+    lines,
+    translationLines: [],
+    sourceLabel: "本地导入",
+  };
+  setCached(cleanArtist(artist), cleanTitle(title), cached);
+  return lines;
+};
+
+/** 读取用户手动导入的 .lrc 文本（无则返回 null） */
+export const getManualLrc = async (
+  artist: string,
+  title: string,
+): Promise<string | null> => {
+  const key = trackLyricKey(artist, title);
+  const raw = await getItem<string>(`${STORAGE_KEYS.manualLrc}:${key}`, "");
+  return raw || null;
+};
+
+/** 清除用户手动导入的 .lrc */
+export const clearManualLrc = async (artist: string, title: string): Promise<void> => {
+  const key = trackLyricKey(artist, title);
+  await setItem(`${STORAGE_KEYS.manualLrc}:${key}`, "");
+  const ck = cacheKey(cleanArtist(artist), cleanTitle(title));
+  lyricCache.delete(ck);
+  localCache.delete(ck);
+  saveLocalCache();
+};
+
+/**
+ * 获取歌词（携带原文、译文与来源标签）
  * @param artist 艺人名
  * @param title 曲名
  * @param album 专辑名（可选）
  * @param duration 歌曲时长（秒），用于给纯文本歌词分配时间戳
  * @param source 歌词来源：auto（并行竞速）| lrclib | netease | kugou
+ * @param force 强制刷新，绕过缓存（用于「重新获取歌词」）
  */
 export const fetchLyrics = async (
   artist: string,
@@ -908,7 +1030,8 @@ export const fetchLyrics = async (
   album?: string,
   duration = 240,
   source: LyricsSource = "auto",
-): Promise<LyricLine[]> => {
+  force = false,
+): Promise<FetchedLyrics> => {
   const rawArtist = artist || "";
   const rawTitle = title || "";
   const rawAlbum = album || "";
@@ -918,37 +1041,47 @@ export const fetchLyrics = async (
   const cleanedAlbum = rawAlbum ? cleanAlbum(rawAlbum) : "";
 
   // 缓存命中（缓存键只使用 artist + title，避免专辑名不一致导致命中失败）
-  const cached = getCached(cleanedArtist, cleanedTitle);
-  if (cached) return cached;
+  if (!force) {
+    const cached = getCached(cleanedArtist, cleanedTitle);
+    if (cached) return cached;
+  } else {
+    // 强制刷新时清掉旧缓存
+    const ck = cacheKey(cleanedArtist, cleanedTitle);
+    lyricCache.delete(ck);
+    localCache.delete(ck);
+  }
 
-  const applyResult = (lyrics: LyricLine[]) => {
-    setCached(cleanedArtist, cleanedTitle, lyrics);
-    return lyrics;
+  const applyResult = (value: CachedLyrics): FetchedLyrics => {
+    setCached(cleanedArtist, cleanedTitle, value);
+    return value;
   };
 
+  let sourceLabel = SOURCE_LABELS[source];
+
   try {
-    let lyrics: LyricLine[] = [];
+    let lines: LyricLine[] = [];
+    let translationLines: LyricLine[] = [];
 
     if (source === "lrclib") {
-      // 仅用 LRCLIB
-      lyrics = await withTimeout(
+      lines = await withTimeout(
         fetchFromLrclib(cleanedArtist, cleanedTitle, cleanedAlbum || undefined, duration),
         LRCLIB_TIMEOUT,
       ).catch(() => []);
     } else if (source === "netease") {
-      // 仅用网易云
-      lyrics = await withTimeout(
+      const r = await withTimeout(
         fetchFromNetease(cleanedArtist, cleanedTitle, duration),
         NETEASE_TIMEOUT,
-      ).catch(() => []);
+      ).catch(() => ({ lines: [] as LyricLine[], translationLines: [] as LyricLine[] }));
+      lines = r.lines;
+      translationLines = r.translationLines;
     } else if (source === "kugou") {
-      // 仅用酷狗
-      lyrics = await withTimeout(
+      lines = await withTimeout(
         fetchFromKugou(cleanedArtist, cleanedTitle, duration),
         NETEASE_TIMEOUT,
       ).catch(() => []);
     } else {
       // auto：酷狗 + 网易云 + LRCLIB 并行竞速，先返回有效歌词者胜出
+      // 网易云额外携带译文，若胜出则一并保留译文
       const kugouPromise = withTimeout(
         fetchFromKugou(cleanedArtist, cleanedTitle, duration),
         NETEASE_TIMEOUT,
@@ -957,20 +1090,35 @@ export const fetchLyrics = async (
       const neteasePromise = withTimeout(
         fetchFromNetease(cleanedArtist, cleanedTitle, duration),
         NETEASE_TIMEOUT,
-      ).catch(() => [] as LyricLine[]);
+      ).catch(() => ({ lines: [] as LyricLine[], translationLines: [] as LyricLine[] }));
 
       const lrclibPromise = withTimeout(
         fetchFromLrclib(cleanedArtist, cleanedTitle, cleanedAlbum || undefined, duration),
         LRCLIB_TIMEOUT,
       ).catch(() => [] as LyricLine[]);
 
-      // 三个源同时跑，取最先返回的有效歌词
-      const results = await Promise.all([kugouPromise, neteasePromise, lrclibPromise]);
-      lyrics = results.find((r) => r.length > 0) || [];
+      const [kugouLines, neteaseResult, lrclibLines] = await Promise.all([
+        kugouPromise,
+        neteasePromise,
+        lrclibPromise,
+      ]);
+
+      // 优先级：网易云（带译文）> 酷狗 > LRCLIB
+      if (neteaseResult.lines.length) {
+        lines = neteaseResult.lines;
+        translationLines = neteaseResult.translationLines;
+        sourceLabel = "网易云";
+      } else if (kugouLines.length) {
+        lines = kugouLines;
+        sourceLabel = "酷狗";
+      } else if (lrclibLines.length) {
+        lines = lrclibLines;
+        sourceLabel = "LRCLIB";
+      }
     }
 
-    return applyResult(lyrics);
+    return applyResult({ lines, translationLines, sourceLabel });
   } catch {
-    return applyResult([]);
+    return applyResult({ lines: [], translationLines: [], sourceLabel });
   }
 };

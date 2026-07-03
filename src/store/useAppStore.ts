@@ -9,7 +9,14 @@ import type {
   Playlist,
   DownloadItem,
 } from "../types";
-import { fetchLyrics, findLyricIndex } from "../utils/lyrics";
+import {
+  fetchLyrics,
+  findLyricIndex,
+  applyLyricLanguage,
+  saveManualLrc,
+  clearManualLrc,
+  parseLRC,
+} from "../utils/lyrics";
 import { searchTracks, downloadTrackAudio } from "../utils/musicSources";
 import { applyAccent } from "../utils/accents";
 import { getItem, setItem, setBlob, getBlob, removeBlob, STORAGE_KEYS } from "../lib/storage";
@@ -50,6 +57,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultQuery: "",
   osuMirror: "sayobot",
   lyricsSource: "auto",
+  lyricLanguage: "original",
+  lyricOffset: 0,
+  showLyricSource: true,
   showSourceBadge: true,
   autoLoadLyrics: true,
   keepScreenOn: false,
@@ -129,7 +139,17 @@ interface AppState {
   playPlaylist: (playlist: Playlist, startIndex?: number) => void;
 
   showNowPlaying: (show: boolean) => void;
-  loadLyrics: (track: Track) => Promise<void>;
+  loadLyrics: (track: Track, force?: boolean) => Promise<void>;
+  /** 强制重新获取歌词（绕过缓存） */
+  reloadLyrics: () => Promise<void>;
+  /** 导入本地 .lrc 文件作为当前曲目歌词 */
+  importLyricFile: (lrcText: string) => Promise<void>;
+  /** 清除当前曲目的本地导入歌词 */
+  removeManualLyric: () => Promise<void>;
+  /** 切换歌词语言模式，即时应用已缓存的原文+译文 */
+  switchLyricLanguage: (language: AppSettings["lyricLanguage"]) => void;
+  /** 切换当前曲目的播放来源（同曲目不同来源） */
+  switchTrackSource: (sourceTrack: Track) => void;
   updateCurrentLyric: () => void;
 
   library: LibraryState;
@@ -190,6 +210,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     lyrics: [],
     lyricsLoading: false,
     currentLyricIndex: -1,
+    lyricSourceLabel: "",
+    fetchedLyrics: null,
     contextQueue: [],
     osuDownloadProgress: -1,
     downloadProgress: {},
@@ -210,12 +232,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         history: newHistory,
         lyrics: [],
         currentLyricIndex: -1,
+        lyricSourceLabel: "",
+        fetchedLyrics: null,
         contextQueue,
         osuDownloadProgress: -1,
       },
     });
     persistHistory(newHistory);
-    get().loadLyrics(track);
+    if (get().settings.autoLoadLyrics) {
+      get().loadLyrics(track);
+    }
   },
 
   togglePlay: () =>
@@ -227,8 +253,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setProgress: (progress, currentTime) => {
     const player = get().player;
     const newTime = currentTime ?? player.currentTime;
+    // 歌词偏移：正值延后（歌词提前出现），负值提前
+    const offsetSec = (get().settings.lyricOffset || 0) / 1000;
+    const lyricTime = newTime + offsetSec;
     const lyricIndex = player.lyrics.length
-      ? findLyricIndex(player.lyrics, newTime)
+      ? findLyricIndex(player.lyrics, lyricTime)
       : -1;
     set({
       player: {
@@ -391,33 +420,144 @@ export const useAppStore = create<AppState>((set, get) => ({
   showNowPlaying: (show) =>
     set({ player: { ...get().player, showNowPlaying: show } }),
 
-  loadLyrics: async (track) => {
-    set({ player: { ...get().player, lyricsLoading: true, lyrics: [] } });
+  loadLyrics: async (track, force = false) => {
+    set({
+      player: {
+        ...get().player,
+        lyricsLoading: true,
+        lyrics: [],
+        lyricSourceLabel: "",
+        fetchedLyrics: null,
+      },
+    });
     try {
-      const lyrics = await fetchLyrics(
+      const fetched = await fetchLyrics(
         track.artist,
         track.title,
         track.album,
         track.duration,
         get().settings.lyricsSource,
+        force,
       );
+      const language = get().settings.lyricLanguage;
+      const lyrics = applyLyricLanguage(fetched, language);
+      const offsetSec = (get().settings.lyricOffset || 0) / 1000;
       set({
         player: {
           ...get().player,
           lyrics,
           lyricsLoading: false,
-          currentLyricIndex: findLyricIndex(lyrics, get().player.currentTime),
+          lyricSourceLabel: fetched.sourceLabel,
+          fetchedLyrics: fetched,
+          currentLyricIndex: findLyricIndex(lyrics, get().player.currentTime + offsetSec),
         },
       });
     } catch {
-      set({ player: { ...get().player, lyrics: [], lyricsLoading: false } });
+      set({
+        player: {
+          ...get().player,
+          lyrics: [],
+          lyricsLoading: false,
+          lyricSourceLabel: "",
+          fetchedLyrics: null,
+        },
+      });
+    }
+  },
+
+  /** 强制重新获取歌词（绕过缓存） */
+  reloadLyrics: async () => {
+    const track = get().player.currentTrack;
+    if (!track) return;
+    await get().loadLyrics(track, true);
+  },
+
+  /** 导入本地 .lrc 文件作为当前曲目歌词 */
+  importLyricFile: async (lrcText) => {
+    const track = get().player.currentTrack;
+    if (!track) return;
+    await saveManualLrc(track.artist, track.title, lrcText);
+    // 立即应用到当前播放
+    const fetched = {
+      lines: parseLRC(lrcText),
+      translationLines: [],
+      sourceLabel: "本地导入",
+    };
+    const language = get().settings.lyricLanguage;
+    const lyrics = applyLyricLanguage(fetched, language);
+    const offsetSec = (get().settings.lyricOffset || 0) / 1000;
+    set({
+      player: {
+        ...get().player,
+        lyrics,
+        lyricsLoading: false,
+        lyricSourceLabel: "本地导入",
+        fetchedLyrics: fetched,
+        currentLyricIndex: findLyricIndex(lyrics, get().player.currentTime + offsetSec),
+      },
+    });
+  },
+
+  /** 清除当前曲目的本地导入歌词 */
+  removeManualLyric: async () => {
+    const track = get().player.currentTrack;
+    if (!track) return;
+    await clearManualLrc(track.artist, track.title);
+    await get().loadLyrics(track, true);
+  },
+
+  /** 切换歌词语言模式，即时应用已缓存的原文+译文 */
+  switchLyricLanguage: (language) => {
+    const player = get().player;
+    if (!player.fetchedLyrics) return;
+    const lyrics = applyLyricLanguage(player.fetchedLyrics, language);
+    const offsetSec = (get().settings.lyricOffset || 0) / 1000;
+    set({
+      player: {
+        ...player,
+        lyrics,
+        currentLyricIndex: findLyricIndex(lyrics, player.currentTime + offsetSec),
+      },
+    });
+  },
+
+  /** 切换当前曲目的播放来源（同曲目不同来源） */
+  switchTrackSource: (sourceTrack) => {
+    const player = get().player;
+    const wasPlaying = player.isPlaying;
+    // 保留 alternatives 合集用于后续再切换
+    const allVariants = [player.currentTrack, ...(player.currentTrack?.alternatives || [])].filter(
+      (t): t is Track => !!t,
+    );
+    const newTrack: Track = {
+      ...sourceTrack,
+      alternatives: allVariants.filter((t) => t.id !== sourceTrack.id),
+    };
+    set({
+      player: {
+        ...player,
+        currentTrack: newTrack,
+        lyrics: [],
+        currentLyricIndex: -1,
+        lyricSourceLabel: "",
+        fetchedLyrics: null,
+        osuDownloadProgress: -1,
+      },
+    });
+    if (get().settings.autoLoadLyrics) {
+      get().loadLyrics(newTrack);
+    }
+    // 保持播放状态
+    if (wasPlaying) {
+      set({ player: { ...get().player, isPlaying: true } });
     }
   },
 
   updateCurrentLyric: () => {
     const player = get().player;
     if (!player.lyrics.length) return;
-    const idx = findLyricIndex(player.lyrics, player.currentTime);
+    const offsetSec = (get().settings.lyricOffset || 0) / 1000;
+    const idx = findLyricIndex(player.lyrics, player.currentTime + offsetSec);
     if (idx !== player.currentLyricIndex) {
       set({ player: { ...player, currentLyricIndex: idx } });
     }

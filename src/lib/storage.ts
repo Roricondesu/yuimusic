@@ -144,4 +144,6 @@ export const STORAGE_KEYS = {
   downloadedTracks: "downloadedTracks",
   /** 自定义背景图片 Blob */
   backgroundImage: "backgroundImage",
+  /** 手动导入的 .lrc 歌词文本（前缀，后接曲目键） */
+  manualLrc: "manualLrc",
 } as const;

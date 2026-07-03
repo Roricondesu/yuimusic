@@ -1000,6 +1000,107 @@ const LyricsSourceSelector = memo(function LyricsSourceSelector() {
   );
 });
 
+const LYRIC_LANGUAGE_OPTIONS: { key: AppSettings["lyricLanguage"]; label: string; desc: string }[] = [
+  { key: "original", label: "原文", desc: "仅显示原语言歌词" },
+  { key: "translation", label: "译文", desc: "仅显示翻译歌词" },
+  { key: "bilingual", label: "双语", desc: "原文 + 译文合并" },
+];
+
+const LyricLanguageSelector = memo(function LyricLanguageSelector() {
+  const language = useAppStore((s) => s.settings.lyricLanguage);
+  const switchLyricLanguage = useAppStore((s) => s.switchLyricLanguage);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>歌词语言</div>
+      <div className="flex gap-2">
+        {LYRIC_LANGUAGE_OPTIONS.map((opt) => {
+          const active = language === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => {
+                updateSetting("lyricLanguage", opt.key);
+                // 即时应用到当前已加载的歌词
+                switchLyricLanguage(opt.key);
+              }}
+              className="flex-1 rounded-lg px-3 py-2 text-left transition-colors"
+              style={{
+                border: "1px solid",
+                borderColor: active ? "var(--accent)" : "var(--border)",
+                background: active ? "var(--accent-soft)" : "transparent",
+                cursor: "pointer",
+              }}
+            >
+              <div className="text-xs font-medium" style={{ color: active ? "var(--accent)" : "var(--text-primary)" }}>
+                {opt.label}
+              </div>
+              <div className="text-[10px] mt-0.5" style={{ color: "var(--text-secondary)" }}>
+                {opt.desc}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        译文来自网易云翻译歌词（tlyric）。双语模式按时间戳对齐合并。
+      </p>
+    </div>
+  );
+});
+
+const LyricOffsetSlider = memo(function LyricOffsetSlider({ scheme }: { scheme: Scheme }) {
+  const value = useAppStore((s) => s.settings.lyricOffset);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>歌词时间偏移</div>
+        <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+          {value > 0 ? `+${value}` : value} ms
+        </span>
+      </div>
+      <div className="py-1">
+        <GlassSlider
+          value={value}
+          onValueChange={(v) => updateSetting("lyricOffset", v)}
+          min={-3000}
+          max={3000}
+          step={100}
+          thumbHeight={18}
+          thumbWidth={18}
+          height={5}
+          rubberOvershoot={0.02}
+          scheme={scheme}
+          ariaLabel="歌词时间偏移"
+        />
+      </div>
+      <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+        正值延后显示，负值提前显示。用于歌词与音频不同步时微调。
+      </p>
+    </div>
+  );
+});
+
+const LyricSourceBadgeToggle = memo(function LyricSourceBadgeToggle({ scheme }: { scheme: Scheme }) {
+  const showLyricSource = useAppStore((s) => s.settings.showLyricSource);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+  return (
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>显示歌词来源</div>
+        <div className="text-xs" style={{ color: "var(--text-secondary)" }}>在播放页展示歌词来源标签</div>
+      </div>
+      <GlassSwitch
+        checked={showLyricSource}
+        onCheckedChange={(checked) => updateSetting("showLyricSource", checked)}
+        scheme={scheme}
+        ariaLabel="显示歌词来源"
+      />
+    </div>
+  );
+});
+
 const PlaybackSection = memo(function PlaybackSection({ scheme }: { scheme: Scheme }) {
   return (
     <CollapsibleSection icon={<Headphones size={18} />} title="播放" delay={3}>
@@ -1032,6 +1133,9 @@ const PlaybackSection = memo(function PlaybackSection({ scheme }: { scheme: Sche
         <LyricFontSizeSelector />
         <LyricEffectSelector />
         <LyricsSourceSelector />
+        <LyricLanguageSelector />
+        <LyricOffsetSlider scheme={scheme} />
+        <LyricSourceBadgeToggle scheme={scheme} />
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>单声道播放</div>

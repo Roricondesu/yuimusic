@@ -13,11 +13,20 @@ export interface Track {
   source: TrackSource;
   /** 是否为版权试听版（如 iTunes 30 秒预览） */
   preview?: boolean;
-  /** osu! 专用：beatmapset id，用于下载 .osz 提取完整音频 */
+  /** osu! 专用：beatmapset id，用于下载 .osz 提取音频 */
   osuSetId?: number;
   /** osu! 下载镜像：sayobot（国内快）| osu.direct */
   osuMirror?: "sayobot" | "osu.direct";
+  /**
+   * 同曲目不同来源的备选版本（名字+歌手相同视为同曲目）。
+   * 主 Track 是首选来源，alternatives 是其他来源的可切换版本。
+   * 仅在搜索结果合并时填充，播放时可切换。
+   */
+  alternatives?: Track[];
 }
+
+/** 歌词语言模式：原文 / 译文 / 双语 */
+export type LyricLanguage = "original" | "translation" | "bilingual";
 
 export type TabKey =
   | "home"
@@ -56,6 +65,17 @@ export type AccentKey =
 export interface LyricLine {
   time: number; // 秒
   text: string;
+  /** 译文（双语模式下填充） */
+  translation?: string;
+}
+
+/** 歌词获取结果，携带原文与译文以便切换语言模式 */
+export interface FetchedLyrics {
+  lines: LyricLine[];
+  /** 译文行（按原文时间戳对齐），无则空 */
+  translationLines: LyricLine[];
+  /** 歌词来源标识，用于展示 */
+  sourceLabel: string;
 }
 
 export interface Playlist {
@@ -112,6 +132,12 @@ export interface AppSettings {
   osuMirror: "sayobot" | "osu.direct";
   /** 歌词来源：auto（并行竞速）| lrclib（海外）| netease（网易云）| kugou（酷狗） */
   lyricsSource: "auto" | "lrclib" | "netease" | "kugou";
+  /** 歌词语言：原文 / 译文 / 双语 */
+  lyricLanguage: LyricLanguage;
+  /** 歌词时间偏移（毫秒，正值延后，负值提前） */
+  lyricOffset: number;
+  /** 显示歌词来源徽标 */
+  showLyricSource: boolean;
   /** 在曲目标签上显示来源徽标 */
   showSourceBadge: boolean;
   /** 进入播放页时自动加载歌词 */
@@ -175,6 +201,10 @@ export interface PlayerState {
   lyrics: LyricLine[];
   lyricsLoading: boolean;
   currentLyricIndex: number;
+  /** 当前歌词来源标签（用于展示，如「网易云」「本地导入」） */
+  lyricSourceLabel: string;
+  /** 最近一次获取的原始歌词（含原文+译文），用于切换语言模式时即时应用 */
+  fetchedLyrics: FetchedLyrics | null;
   /** 当前播放上下文（来自哪个歌单/列表） */
   contextQueue: Track[];
   /** osu! 谱面下载进度（0-1），-1 表示无下载 */
