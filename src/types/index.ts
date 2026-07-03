@@ -92,6 +92,12 @@ export interface AppSettings {
   lyricFontSize: "small" | "medium" | "large";
   /** 歌词非当前行效果 */
   lyricEffect: "none" | "blur" | "fade";
+  /** 歌词对齐方式 */
+  lyricAlign: "left" | "center" | "right";
+  /** 歌词字体粗细 */
+  lyricWeight: "normal" | "medium" | "bold";
+  /** 歌词字体族 */
+  lyricFontFamily: "system" | "serif" | "mono";
   /** 单声道音频 */
   monoAudio: boolean;
   /** 默认搜索词（空则 pop） */

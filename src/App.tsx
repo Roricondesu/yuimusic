@@ -98,7 +98,7 @@ export default function App() {
 
       {renderNowPlaying && (
         <div
-          className={`fixed inset-0 z-[60] overflow-hidden ${
+          className={`fixed inset-0 z-50 overflow-hidden ${
             exitAnim ? "nowplaying-exit" : "nowplaying-enter"
           }`}
         >

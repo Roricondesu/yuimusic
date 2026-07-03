@@ -106,7 +106,7 @@ export const BottomPlayer: React.FC = () => {
 
   return (
     <div
-      className={`fixed left-0 right-0 z-40 flex px-3 pb-3 md:px-6 md:pb-5 ${hasTrack ? "bottom-0 justify-center" : "-bottom-24 justify-start"}`}
+      className={`fixed left-0 right-0 z-[60] flex px-3 pb-3 md:px-6 md:pb-5 ${hasTrack ? "bottom-0 justify-center" : "-bottom-24 justify-start"}`}
       style={{ pointerEvents: "none", transition: "bottom 0.4s cubic-bezier(0.22, 1, 0.36, 1)" }}
     >
       <GlassCard

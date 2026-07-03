@@ -1,16 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Shuffle,
-  Repeat,
-  Repeat1,
   ChevronDown,
   Heart,
-  Volume2,
-  VolumeX,
   ListMusic,
   ChevronLeft,
   Download,
@@ -18,24 +9,27 @@ import {
   Loader2,
   X,
   Mic2,
-  ListPlus,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Type,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
-import { GlassCard } from "../components/glass/GlassCard";
-import { SeekBar } from "../components/layout/SeekBar";
-import { formatTime } from "../utils/formatTime";
 import { SourceIcon } from "../components/common/SourceIcon";
 import { CoverImage } from "../components/common/CoverImage";
 import type { LyricLine, Track } from "../types";
 
-/* ---------- 歌词列表（三栏布局，当前行放大） ---------- */
+/* ---------- 歌词列表 ---------- */
 function LyricList({
   lyrics,
   loading,
   currentIndex,
   fontSize,
+  fontWeight,
+  fontFamily,
   effect,
   isDark,
+  align,
   scrollRef,
   onSeek,
   duration,
@@ -45,8 +39,11 @@ function LyricList({
   loading: boolean;
   currentIndex: number;
   fontSize: number;
+  fontWeight: number;
+  fontFamily: string;
   effect: "none" | "blur" | "fade";
   isDark: boolean;
+  align: "left" | "center" | "right";
   scrollRef: React.RefObject<HTMLDivElement>;
   onSeek: (p: number) => void;
   duration: number;
@@ -78,68 +75,61 @@ function LyricList({
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   }, [lyrics, scrollRef]);
 
-  // 当前行字号放大 1.4x，邻近行递减
-  const sizeFor = useCallback(
-    (i: number) => {
-      const dist = Math.abs(i - currentIndex);
-      if (dist === 0) return Math.round(fontSize * 1.4);
-      if (dist === 1) return Math.round(fontSize * 1.05);
-      return fontSize;
-    },
-    [fontSize, currentIndex],
-  );
-
   const itemStyle = useCallback(
     (i: number): React.CSSProperties => {
       const active = i === currentIndex;
       const dist = Math.abs(i - currentIndex);
       const baseColor = active
-        ? "var(--text-primary)"
+        ? "var(--accent)"
         : isDark
-          ? "rgba(255,255,255,0.3)"
-          : "rgba(0,0,0,0.3)";
+          ? "rgba(255,255,255,0.35)"
+          : "rgba(0,0,0,0.35)";
 
       if (active || effect === "none") {
         return {
-          fontSize: sizeFor(i),
-          fontWeight: active ? 700 : 400,
-          color: active ? "var(--accent)" : baseColor,
+          fontSize: active ? Math.round(fontSize * 1.35) : fontSize,
+          fontWeight: active ? 700 : fontWeight,
+          color: baseColor,
           transform: active ? "scale(1.02)" : "scale(1)",
-          lineHeight: 1.6,
         };
       }
       if (effect === "fade") {
         return {
-          fontSize: sizeFor(i),
-          fontWeight: 400,
+          fontSize,
+          fontWeight,
           color: baseColor,
-          opacity: Math.max(0.15, 1 - dist * 0.25),
+          opacity: Math.max(0.15, 1 - dist * 0.22),
           transform: "scale(1)",
-          lineHeight: 1.6,
         };
       }
       return {
-        fontSize: sizeFor(i),
-        fontWeight: 400,
+        fontSize,
+        fontWeight,
         color: baseColor,
-        opacity: Math.max(0.25, 1 - dist * 0.12),
+        opacity: Math.max(0.25, 1 - dist * 0.1),
         filter: dist > 0 ? `blur(${Math.min(3, dist * 0.5)}px)` : undefined,
         transform: "scale(1)",
-        lineHeight: 1.6,
       };
     },
-    [currentIndex, effect, isDark, sizeFor],
+    [currentIndex, fontSize, fontWeight, effect, isDark],
   );
+
+  const alignClass =
+    align === "left"
+      ? "items-start text-left"
+      : align === "right"
+        ? "items-end text-right"
+        : "items-center text-center";
 
   return (
     <div
       ref={scrollRef}
-      className="lyric-scroll flex-1 overflow-y-auto"
+      className="lyric-scroll flex-1 overflow-y-auto rounded-xl px-2"
       style={{
         maskImage:
-          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
         WebkitMaskImage:
-          "linear-gradient(to bottom, transparent, black 8%, black 92%, transparent)",
+          "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
       }}
     >
       {loading ? (
@@ -154,14 +144,18 @@ function LyricList({
           </p>
         </div>
       ) : (
-        <div className="flex flex-col items-center py-10">
+        <div className={`flex flex-col py-10 ${alignClass}`} style={{ fontFamily }}>
           {lyrics.map((line, i) => (
             <p
               key={i}
               data-idx={i}
-              className="lyric-line cursor-pointer py-2 text-center transition-[color,opacity,filter,transform,font-size] duration-500"
+              className="lyric-line cursor-pointer py-2 transition-[color,opacity,filter,transform,font-size] duration-500"
+              style={{
+                ...itemStyle(i),
+                maxWidth: "90%",
+                padding: align === "left" ? "0 0 0 1rem" : align === "right" ? "0 1rem 0 0" : undefined,
+              }}
               onClick={() => onSeek(duration > 0 ? line.time / duration : 0)}
-              style={itemStyle(i)}
             >
               {line.text || "♪"}
             </p>
@@ -187,10 +181,10 @@ function VinylCover({
       <div
         className="relative overflow-hidden rounded-full shadow-2xl"
         style={{
-          width: "min(50vw, 260px)",
-          height: "min(50vw, 260px)",
-          maxWidth: 260,
-          maxHeight: 260,
+          width: "min(48vw, 280px)",
+          height: "min(48vw, 280px)",
+          maxWidth: 280,
+          maxHeight: 280,
         }}
       >
         <div
@@ -267,7 +261,7 @@ function QueuePanel({
       onClick={onClose}
     >
       <div
-        className="mt-auto max-h-[60%] overflow-hidden rounded-t-3xl"
+        className="mb-28 mt-auto max-h-[60%] overflow-hidden rounded-t-3xl md:mb-24"
         style={{ background: "var(--surface)" }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -328,34 +322,185 @@ function QueuePanel({
   );
 }
 
+/* ---------- 歌词设置浮层 ---------- */
+function LyricSettingsPanel({ onClose }: { onClose: () => void }) {
+  const settings = useAppStore((s) => s.settings);
+  const updateSetting = useAppStore((s) => s.updateSetting);
+
+  const iconBtn = (active?: boolean): React.CSSProperties => ({
+    border: "none",
+    background: active ? "var(--accent-soft)" : "transparent",
+    color: active ? "var(--accent)" : "var(--text-secondary)",
+    cursor: "pointer",
+    padding: 8,
+    borderRadius: 10,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "all 0.15s ease",
+  });
+
+  const labelStyle: React.CSSProperties = {
+    color: "var(--text-secondary)",
+    fontSize: 12,
+    marginBottom: 6,
+  };
+
+  return (
+    <div
+      className="absolute inset-0 z-30 flex flex-col"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="mb-28 mt-auto max-h-[85vh] overflow-y-auto rounded-t-3xl p-5 md:mb-24"
+        style={{ background: "var(--surface)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Type size={18} style={{ color: "var(--accent)" }} />
+            <h3 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
+              歌词样式
+            </h3>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ border: "none", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* 对齐方式 */}
+        <div className="mb-4">
+          <div style={labelStyle}>对齐方式</div>
+          <div className="flex gap-2">
+            {([
+              { key: "left", icon: AlignLeft, label: "左" },
+              { key: "center", icon: AlignCenter, label: "中" },
+              { key: "right", icon: AlignRight, label: "右" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricAlign", opt.key)}
+                style={iconBtn(settings.lyricAlign === opt.key)}
+                className="flex flex-1 items-center justify-center gap-1.5 py-2.5 text-sm font-medium"
+              >
+                <opt.icon size={16} />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 字号 */}
+        <div className="mb-4">
+          <div style={labelStyle}>字号</div>
+          <div className="flex gap-2">
+            {(["small", "medium", "large"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => updateSetting("lyricFontSize", s)}
+                style={iconBtn(settings.lyricFontSize === s)}
+                className="flex-1 py-2.5 text-sm font-medium"
+              >
+                {s === "small" ? "小" : s === "medium" ? "中" : "大"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 字重 */}
+        <div className="mb-4">
+          <div style={labelStyle}>字重</div>
+          <div className="flex gap-2">
+            {([
+              { key: "normal", label: "常规", weight: 400 },
+              { key: "medium", label: "中等", weight: 500 },
+              { key: "bold", label: "粗体", weight: 700 },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricWeight", opt.key)}
+                style={{
+                  ...iconBtn(settings.lyricWeight === opt.key),
+                  fontWeight: opt.weight,
+                }}
+                className="flex-1 py-2.5 text-sm"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 字体族 */}
+        <div className="mb-4">
+          <div style={labelStyle}>字体</div>
+          <div className="flex gap-2">
+            {([
+              { key: "system", label: "系统", family: "inherit" },
+              { key: "serif", label: "衬线", family: "Georgia, serif" },
+              { key: "mono", label: "等宽", family: "monospace" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricFontFamily", opt.key)}
+                style={{
+                  ...iconBtn(settings.lyricFontFamily === opt.key),
+                  fontFamily: opt.family,
+                }}
+                className="flex-1 py-2.5 text-sm"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 效果 */}
+        <div>
+          <div style={labelStyle}>非当前行效果</div>
+          <div className="flex gap-2">
+            {([
+              { key: "none", label: "无" },
+              { key: "fade", label: "淡出" },
+              { key: "blur", label: "模糊" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => updateSetting("lyricEffect", opt.key)}
+                style={iconBtn(settings.lyricEffect === opt.key)}
+                className="flex-1 py-2.5 text-sm font-medium"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- 主组件 ---------- */
 export default function NowPlaying() {
   const currentTrack = useAppStore((s) => s.player.currentTrack);
   const isPlaying = useAppStore((s) => s.player.isPlaying);
-  const progress = useAppStore((s) => s.player.progress);
-  const currentTime = useAppStore((s) => s.player.currentTime);
-  const duration = useAppStore((s) => s.player.duration);
-  const volume = useAppStore((s) => s.player.volume);
-  const shuffle = useAppStore((s) => s.player.shuffle);
-  const repeat = useAppStore((s) => s.player.repeat);
   const theme = useAppStore((s) => s.settings.theme);
   const lyricFontSize = useAppStore((s) => s.settings.lyricFontSize);
   const lyricEffect = useAppStore((s) => s.settings.lyricEffect);
+  const lyricAlign = useAppStore((s) => s.settings.lyricAlign);
+  const lyricWeight = useAppStore((s) => s.settings.lyricWeight);
+  const lyricFontFamily = useAppStore((s) => s.settings.lyricFontFamily);
   const reduceMotion = useAppStore((s) => s.settings.reduceMotion);
   const lyrics = useAppStore((s) => s.player.lyrics);
   const lyricsLoading = useAppStore((s) => s.player.lyricsLoading);
   const currentLyricIndex = useAppStore((s) => s.player.currentLyricIndex);
   const osuDownloadProgress = useAppStore((s) => s.player.osuDownloadProgress);
   const downloadProgress = useAppStore((s) => s.player.downloadProgress);
-  const playlists = useAppStore((s) => s.player.playlists);
 
-  const togglePlay = useAppStore((s) => s.togglePlay);
-  const nextTrack = useAppStore((s) => s.nextTrack);
-  const prevTrack = useAppStore((s) => s.prevTrack);
-  const seekTo = useAppStore((s) => s.seekTo);
-  const setVolume = useAppStore((s) => s.setVolume);
-  const toggleShuffle = useAppStore((s) => s.toggleShuffle);
-  const cycleRepeat = useAppStore((s) => s.cycleRepeat);
   const setShowNowPlaying = useAppStore((s) => s.showNowPlaying);
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
   const isFavorite = useAppStore((s) => s.isFavorite);
@@ -363,13 +508,8 @@ export default function NowPlaying() {
   const downloadTrack = useAppStore((s) => s.downloadTrack);
   const isDownloaded = useAppStore((s) => s.isDownloaded);
   const removeDownloadedTrack = useAppStore((s) => s.removeDownloadedTrack);
-  const addToPlaylist = useAppStore((s) => s.addToPlaylist);
-  const isTrackInPlaylist = useAppStore((s) => s.isTrackInPlaylist);
 
-  const scheme = theme === "dark" ? "dark" : "light";
-  const isDark = scheme === "dark";
-  const displayDuration = duration || currentTrack?.duration || 0;
-  const isMuted = volume === 0;
+  const isDark = theme === "dark";
   const liked = currentTrack ? isFavorite(currentTrack.id) : false;
   const downloaded = currentTrack ? isDownloaded(currentTrack.id) : false;
   const dlProgress = currentTrack ? downloadProgress[currentTrack.id] : undefined;
@@ -378,12 +518,27 @@ export default function NowPlaying() {
   const lyricScrollRefMobile = useRef<HTMLDivElement>(null);
   const [mobilePage, setMobilePage] = useState(0);
   const [showQueue, setShowQueue] = useState(false);
-  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+  const [showLyricSettings, setShowLyricSettings] = useState(false);
 
   const fontSize = useMemo(
     () =>
       lyricFontSize === "small" ? 14 : lyricFontSize === "large" ? 20 : 17,
     [lyricFontSize],
+  );
+
+  const fontWeightNum = useMemo(
+    () => (lyricWeight === "bold" ? 700 : lyricWeight === "medium" ? 500 : 400),
+    [lyricWeight],
+  );
+
+  const fontFamilyStr = useMemo(
+    () =>
+      lyricFontFamily === "serif"
+        ? "Georgia, 'Times New Roman', serif"
+        : lyricFontFamily === "mono"
+          ? "'SF Mono', 'Menlo', monospace"
+          : "inherit",
+    [lyricFontFamily],
   );
 
   const iconBtn = useCallback(
@@ -396,12 +551,12 @@ export default function NowPlaying() {
           ? "rgba(255,255,255,0.7)"
           : "rgba(0,0,0,0.65)",
       cursor: "pointer",
-      padding: 6,
-      borderRadius: 8,
+      padding: 8,
+      borderRadius: 10,
       display: "inline-flex",
       alignItems: "center",
       justifyContent: "center",
-      transition: "background 0.15s ease, color 0.15s ease, transform 0.15s ease",
+      transition: "color 0.15s ease, transform 0.15s ease",
     }),
     [isDark],
   );
@@ -415,15 +570,10 @@ export default function NowPlaying() {
     }
   };
 
-  const handleAddToPlaylist = (playlistId: string) => {
-    if (currentTrack) addToPlaylist(playlistId, currentTrack);
-    setShowPlaylistMenu(false);
-  };
-
   useEffect(() => {
     setMobilePage(0);
     setShowQueue(false);
-    setShowPlaylistMenu(false);
+    setShowLyricSettings(false);
   }, [currentTrack?.id]);
 
   // 移动端水平滑动切换
@@ -490,14 +640,17 @@ export default function NowPlaying() {
     loading: lyricsLoading,
     currentIndex: currentLyricIndex,
     fontSize,
+    fontWeight: fontWeightNum,
+    fontFamily: fontFamilyStr,
     effect: lyricEffect,
     isDark,
-    onSeek: seekTo,
-    duration: displayDuration,
+    align: lyricAlign,
+    onSeek: useAppStore.getState().seekTo,
+    duration: currentTrack.duration,
     reduceMotion,
   };
 
-  const downloadBtn = (size: number) => {
+  const downloadButton = (size: number) => {
     if (downloaded) {
       return (
         <button
@@ -529,68 +682,9 @@ export default function NowPlaying() {
     );
   };
 
-  const favBtn = (size: number) => (
-    <button
-      onClick={() => toggleFavorite(currentTrack)}
-      style={iconBtn(liked)}
-      aria-label="收藏"
-      className="hover:scale-110"
-    >
-      <Heart size={size} fill={liked ? "currentColor" : "none"} />
-    </button>
-  );
-
-  const playlistMenuBtn = (size: number) => (
-    <div style={{ position: "relative" }}>
-      <button
-        style={iconBtn()}
-        onClick={() => setShowPlaylistMenu((v) => !v)}
-        aria-label="加入歌单"
-        className="hover:scale-110"
-      >
-        <ListPlus size={size} />
-      </button>
-      {showPlaylistMenu && (
-        <div
-          className="absolute bottom-full right-0 mb-2 w-48 rounded-xl py-1 shadow-2xl z-20"
-          style={{
-            background: "var(--surface-elevated)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          {playlists.length === 0 ? (
-            <div className="px-3 py-2 text-xs" style={{ color: "var(--text-secondary)" }}>
-              还没有歌单
-            </div>
-          ) : (
-            playlists.map((pl) => {
-              const inList = isTrackInPlaylist(pl.id, currentTrack.id);
-              return (
-                <button
-                  key={pl.id}
-                  onClick={() => handleAddToPlaylist(pl.id)}
-                  className="flex w-full items-center justify-between px-3 py-2 text-left text-xs"
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    color: "var(--text-primary)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <span className="truncate">{pl.name}</span>
-                  {inList && <Check size={12} style={{ color: "var(--accent)" }} />}
-                </button>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
-  );
-
   return (
     <div
-      className="absolute inset-0 z-[60] flex flex-col overflow-hidden"
+      className="absolute inset-0 z-[55] flex flex-col overflow-hidden"
       style={{ background: "var(--bg-base)" }}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
@@ -654,33 +748,28 @@ export default function NowPlaying() {
       </div>
 
       {/* 主内容区 */}
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 md:px-6">
-        {/* 桌面端：左中右三栏布局 */}
-        <div className="hidden min-h-0 flex-1 grid-cols-[1fr_1.2fr_1fr] items-center gap-6 md:grid">
-          {/* 左栏：上一首歌词（预览） */}
-          <div className="flex h-full min-h-0 flex-col justify-center">
-            <LyricList {...lyricProps} scrollRef={lyricScrollRef} />
-          </div>
-
-          {/* 中栏：封面 + 信息 */}
-          <div className="flex h-full flex-col items-center justify-center gap-5">
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-28 md:px-6 md:pb-24">
+        {/* 桌面端：左右分栏 */}
+        <div className="hidden min-h-0 flex-1 grid-cols-2 items-center gap-8 md:grid">
+          {/* 左侧：唱片 + 信息 + 操作 */}
+          <div className="flex h-full flex-col items-center justify-center gap-4">
             <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
 
-            <div className="flex w-full max-w-sm flex-col items-center gap-2">
+            <div className="flex w-full max-w-md flex-col items-center gap-2">
               <h1
-                className="flex items-center gap-2 text-xl font-bold"
+                className="flex items-center gap-2 text-xl font-bold md:text-2xl"
                 style={{ color: "var(--text-primary)" }}
               >
                 <span className="truncate">{currentTrack.title}</span>
                 <SourceIcon source={currentTrack.source} size={13} />
               </h1>
-              <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+              <p className="text-sm md:text-base" style={{ color: "var(--text-secondary)" }}>
                 {currentTrack.artist}
               </p>
 
               {/* 下载进度条 */}
               {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
-                <div className="flex w-full max-w-xs items-center gap-2 mt-1">
+                <div className="flex w-full max-w-xs items-center gap-2">
                   <Loader2 size={12} className="animate-spin" style={{ color: "var(--accent)" }} />
                   <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-elevated)" }}>
                     <div
@@ -699,15 +788,44 @@ export default function NowPlaying() {
 
               {/* 操作按钮 */}
               <div className="mt-1 flex items-center gap-2">
-                {favBtn(20)}
-                {downloadBtn(20)}
-                {playlistMenuBtn(20)}
+                <button
+                  onClick={() => toggleFavorite(currentTrack)}
+                  style={iconBtn(liked)}
+                  aria-label="收藏"
+                  className="hover:scale-110"
+                >
+                  <Heart size={22} fill={liked ? "currentColor" : "none"} />
+                </button>
+                {downloadButton(20)}
+                <button
+                  onClick={() => setShowLyricSettings(true)}
+                  style={iconBtn()}
+                  aria-label="歌词样式"
+                  className="hover:scale-110"
+                >
+                  <Type size={20} />
+                </button>
               </div>
             </div>
           </div>
 
-          {/* 右栏：下一首歌词（预览） */}
-          <div className="flex h-full min-h-0 flex-col justify-center">
+          {/* 右侧：歌词 */}
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="mb-2 flex items-center justify-between">
+              <span
+                className="text-xs font-medium uppercase tracking-wider"
+                style={{ color: "var(--text-secondary)" }}
+              >
+                歌词
+              </span>
+              <button
+                onClick={() => setShowLyricSettings(true)}
+                className="flex items-center gap-1 text-xs"
+                style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
+              >
+                <Type size={12} /> 样式
+              </button>
+            </div>
             <LyricList {...lyricProps} scrollRef={lyricScrollRef} />
           </div>
         </div>
@@ -721,7 +839,7 @@ export default function NowPlaying() {
             }}
           >
             {/* 封面页 */}
-            <div className="flex w-full shrink-0 flex-col items-center justify-center gap-4 overflow-hidden">
+            <div className="flex w-full shrink-0 flex-col items-center justify-center gap-3 overflow-hidden">
               <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
 
               <div className="flex w-full max-w-sm flex-col items-center gap-1">
@@ -755,9 +873,23 @@ export default function NowPlaying() {
                 )}
 
                 <div className="mt-2 flex items-center gap-3">
-                  {favBtn(20)}
-                  {downloadBtn(18)}
-                  {playlistMenuBtn(18)}
+                  <button
+                    onClick={() => toggleFavorite(currentTrack)}
+                    style={iconBtn(liked)}
+                    aria-label="收藏"
+                    className="hover:scale-110"
+                  >
+                    <Heart size={20} fill={liked ? "currentColor" : "none"} />
+                  </button>
+                  {downloadButton(18)}
+                  <button
+                    onClick={() => setShowLyricSettings(true)}
+                    style={iconBtn()}
+                    aria-label="歌词样式"
+                    className="hover:scale-110"
+                  >
+                    <Type size={18} />
+                  </button>
                 </div>
 
                 {mobilePage === 0 && (
@@ -776,11 +908,11 @@ export default function NowPlaying() {
                   歌词
                 </span>
                 <button
-                  onClick={() => setMobilePage(0)}
+                  onClick={() => setShowLyricSettings(true)}
                   className="flex items-center gap-0.5 text-xs"
                   style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
                 >
-                  <ChevronLeft size={12} /> 封面
+                  <Type size={12} /> 样式
                 </button>
               </div>
               <LyricList {...lyricProps} scrollRef={lyricScrollRefMobile} />
@@ -810,166 +942,6 @@ export default function NowPlaying() {
         </div>
       </div>
 
-      {/* 底部玻璃播放栏（沿用 BottomPlayer 风格） */}
-      <div className="relative z-20 shrink-0 px-3 pb-3 md:px-6 md:pb-5">
-        <GlassCard
-          scheme={scheme}
-          style={{
-            borderRadius: 20,
-            padding: "12px 16px",
-            maxWidth: "min(calc(100vw - 24px), 1100px)",
-            margin: "0 auto",
-          }}
-        >
-          {/* 桌面端控制栏 */}
-          <div className="hidden md:flex md:items-center md:justify-center">
-            <div className="flex w-full items-center gap-4">
-              {/* 左：封面信息 */}
-              <div className="flex min-w-0 items-center gap-3" style={{ width: 240, flexShrink: 0 }}>
-                <div
-                  className="shrink-0 overflow-hidden rounded-lg"
-                  style={{ width: 44, height: 44, background: "rgba(128,128,128,0.15)" }}
-                >
-                  <CoverImage
-                    src={currentTrack.cover}
-                    alt={currentTrack.title}
-                    className="h-full w-full object-cover"
-                    iconSize={18}
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                      {currentTrack.title}
-                    </span>
-                    <SourceIcon source={currentTrack.source} size={11} />
-                  </div>
-                  <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
-                    {currentTrack.artist}
-                  </div>
-                </div>
-              </div>
-
-              {/* 中：控制 + 进度 */}
-              <div className="flex flex-1 flex-col items-center gap-1">
-                <div className="flex items-center justify-center gap-2">
-                  <button style={iconBtn(shuffle)} onClick={toggleShuffle} aria-label="随机播放" className="hover:scale-110">
-                    <Shuffle size={16} />
-                  </button>
-                  <button style={iconBtn()} onClick={prevTrack} aria-label="上一首" className="hover:scale-110">
-                    <SkipBack size={20} />
-                  </button>
-                  <button
-                    onClick={togglePlay}
-                    aria-label={isPlaying ? "暂停" : "播放"}
-                    style={{
-                      border: "none",
-                      background: "var(--accent)",
-                      color: "#fff",
-                      cursor: "pointer",
-                      padding: 10,
-                      borderRadius: "50%",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      transition: "transform 0.15s ease",
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-                    }}
-                    className="hover:scale-105"
-                  >
-                    {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
-                  </button>
-                  <button style={iconBtn()} onClick={nextTrack} aria-label="下一首" className="hover:scale-110">
-                    <SkipForward size={20} />
-                  </button>
-                  <button style={iconBtn(repeat !== "off")} onClick={cycleRepeat} aria-label={`循环: ${repeat}`} className="hover:scale-110">
-                    {repeat === "one" ? <Repeat1 size={16} /> : <Repeat size={16} />}
-                  </button>
-                </div>
-                {/* 进度条 */}
-                <div className="flex w-full items-center gap-2">
-                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 32, textAlign: "right", flexShrink: 0 }}>
-                    {formatTime(currentTime)}
-                  </span>
-                  <div className="flex flex-1 items-center" style={{ minHeight: 20 }}>
-                    <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} />
-                  </div>
-                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 32, flexShrink: 0 }}>
-                    {formatTime(displayDuration)}
-                  </span>
-                </div>
-              </div>
-
-              {/* 右：音量 + 操作 */}
-              <div className="flex items-center gap-1" style={{ width: 160, flexShrink: 0, justifyContent: "flex-end" }}>
-                {favBtn(16)}
-                {downloadBtn(16)}
-                <button style={iconBtn(isMuted)} onClick={() => setVolume(isMuted ? 0.8 : 0)} aria-label={isMuted ? "取消静音" : "静音"}>
-                  {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
-                </button>
-                <div style={{ width: 70 }}>
-                  <SeekBar progress={volume} onSeek={setVolume} scheme={scheme} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* 移动端控制栏 */}
-          <div className="flex flex-col md:hidden">
-            <div className="flex items-center gap-2" style={{ justifyContent: "space-between" }}>
-              <div className="min-w-0 flex-1" style={{ minWidth: 80 }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="truncate text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                    {currentTrack.title}
-                  </span>
-                  <SourceIcon source={currentTrack.source} size={11} />
-                </div>
-                <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
-                  {currentTrack.artist}
-                </div>
-              </div>
-              <div className="flex items-center gap-1" style={{ flexShrink: 0 }}>
-                {favBtn(16)}
-                {downloadBtn(16)}
-                <button style={iconBtn()} onClick={prevTrack} aria-label="上一首">
-                  <SkipBack size={18} />
-                </button>
-                <button
-                  onClick={togglePlay}
-                  aria-label={isPlaying ? "暂停" : "播放"}
-                  style={{
-                    border: "none",
-                    background: "var(--accent)",
-                    color: "#fff",
-                    cursor: "pointer",
-                    padding: 9,
-                    borderRadius: "50%",
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-                  }}
-                >
-                  {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-                </button>
-                <button style={iconBtn()} onClick={nextTrack} aria-label="下一首">
-                  <SkipForward size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 28, textAlign: "right", flexShrink: 0 }}>
-                {formatTime(currentTime)}
-              </span>
-              <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} />
-              <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)", width: 28, flexShrink: 0 }}>
-                {formatTime(displayDuration)}
-              </span>
-            </div>
-          </div>
-        </GlassCard>
-      </div>
-
       {/* 播放队列面板 */}
       {showQueue && (
         <QueuePanel
@@ -979,6 +951,11 @@ export default function NowPlaying() {
             setShowQueue(false);
           }}
         />
+      )}
+
+      {/* 歌词样式设置面板 */}
+      {showLyricSettings && (
+        <LyricSettingsPanel onClose={() => setShowLyricSettings(false)} />
       )}
     </div>
   );
