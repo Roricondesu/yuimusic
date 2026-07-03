@@ -12,7 +12,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   duration = 2400,
   onFinished,
 }) => {
-  const [progress, setProgress] = useState(0);
   const [exiting, setExiting] = useState(false);
   const [letterStep, setLetterStep] = useState(0);
   const rafRef = useRef<number | null>(null);
@@ -24,7 +23,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     const tick = (now: number) => {
       const elapsed = now - startRef.current;
       const ratio = Math.min(1, elapsed / duration);
-      setProgress(Math.round(ratio * 100));
 
       // 字母逐个亮起：在 0~70% 区间内完成
       const step = Math.min(WORD.length, Math.floor((ratio / 0.7) * WORD.length));
@@ -56,16 +54,23 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
         pointerEvents: exiting ? "none" : "auto",
       }}
     >
-      {/* 文字：居中显示，逐字亮起 */}
+      {/* 文字：居中显示，逐字亮起，外层玻璃罩 */}
       <div
-        className="mb-8 flex items-center justify-center"
+        className="flex items-center justify-center"
         style={{
           fontFamily:
             '"SF Mono", "Menlo", "Monaco", "Cascadia Code", "Source Code Pro", monospace',
           fontWeight: 600,
           fontSize: 30,
           letterSpacing: "0.18em",
-          paddingLeft: "0.18em", // 补偿 letter-spacing 居中
+          padding: "1rem 1.6rem",
+          paddingLeft: "calc(1.6rem + 0.18em)", // 补偿 letter-spacing 居中
+          borderRadius: 18,
+          background: "rgba(255,255,255,0.06)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.18), inset 0 1px 0 rgba(255,255,255,0.08)",
         }}
       >
         {WORD.split("").map((ch, i) => {
@@ -75,11 +80,13 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
               key={i}
               style={{
                 color: lit ? "var(--text-primary)" : "transparent",
-                textShadow: lit ? "none" : undefined,
+                textShadow: lit
+                  ? "0 0 18px rgba(255,255,255,0.15)"
+                  : undefined,
                 WebkitTextStroke: lit
                   ? "none"
                   : `1px ${"var(--text-secondary)"}`,
-                opacity: lit ? 1 : 0.5,
+                opacity: lit ? 1 : 0.45,
                 transition:
                   "color 0.3s ease, opacity 0.3s ease, -webkit-text-stroke 0.3s ease",
               }}
@@ -88,25 +95,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
             </span>
           );
         })}
-      </div>
-
-      {/* 简洁白色线条进度条 */}
-      <div
-        className="relative overflow-hidden rounded-full"
-        style={{ width: "min(70vw, 240px)", height: 2 }}
-      >
-        <div
-          className="absolute inset-0 rounded-full"
-          style={{ background: "var(--surface-elevated)" }}
-        />
-        <div
-          className="absolute left-0 top-0 h-full rounded-full"
-          style={{
-            width: `${progress}%`,
-            background: "var(--text-primary)",
-            transition: "width 0.08s linear",
-          }}
-        />
       </div>
     </div>
   );
