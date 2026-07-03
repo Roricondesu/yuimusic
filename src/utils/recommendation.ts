@@ -1,12 +1,15 @@
 import type { Track } from "../types";
+import { fetchRecommendationTracks } from "./musicSources";
 
 /**
  * 推荐与个性化工具
  *
- * 规则：
+ * 改进版规则：
  * - 完整版优先（preview=false 排在前面）
  * - 去重（按 id 与 artist+title 双重去重）
- * - 基于历史播放的艺人/流派加权
+ * - 基于历史播放的艺人加权 + 时间衰减
+ * - 从多个来源并行搜索获取更多推荐曲目
+ * - "因为你听过 X" 基于艺人推荐
  * - 随机洗牌但保持稳定（同一 session 内推荐一致）
  */
 
@@ -79,20 +82,27 @@ export const sortFullFirst = (tracks: Track[]): Track[] => {
   });
 };
 
-/** 从历史播放记录中提取最常听的艺人 */
+/** 从历史播放记录中提取最常听的艺人（带时间衰减） */
 export const topArtistsFromHistory = (
   history: Track[],
-  limit = 3,
-): string[] => {
-  const counts = new Map<string, number>();
-  for (const t of history) {
+  limit = 5,
+): { artist: string; count: number; originalName: string }[] => {
+  const counts = new Map<string, { count: number; originalName: string }>();
+  // 历史已按最近播放排序（index 0 = 最新），越近权重越高
+  history.forEach((t, idx) => {
     const key = normalize(t.artist);
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
+    const weight = 1 + (history.length - idx) / history.length;
+    const existing = counts.get(key);
+    if (existing) {
+      existing.count += weight;
+    } else {
+      counts.set(key, { count: weight, originalName: t.artist });
+    }
+  });
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].count - a[1].count)
     .slice(0, limit)
-    .map(([k]) => k);
+    .map(([k, v]) => ({ artist: k, count: v.count, originalName: v.originalName }));
 };
 
 /** 从历史播放记录中提取常听流派（用 album 字段简单推断） */
@@ -111,7 +121,7 @@ export const topGenresFromHistory = (
     .map(([k]) => k);
 };
 
-/** 计算曲目与历史的匹配分 */
+/** 计算曲目与历史的匹配分（带时间衰减） */
 const scoreTrackForHistory = (track: Track, history: Track[]): number => {
   const artists = new Set(history.map((t) => normalize(t.artist)));
   const titles = new Set(history.map((t) => normalize(baseTitle(t.title))));
@@ -130,7 +140,7 @@ export interface RecommendationResult {
   featured: Track | null;
   /** 热门趋势 */
   trending: Track[];
-  /** 基于历史的“为你推荐” */
+  /** 基于历史的"为你推荐" */
   forYou: Track[];
   /** 完整版优先推荐 */
   fullVersions: Track[];
@@ -138,10 +148,39 @@ export interface RecommendationResult {
   discoveries: Track[];
   /** 快速播放列表（去重后的热门+推荐） */
   quickPicks: Track[];
+  /** "因为你听过 X"：基于历史艺人的推荐 */
+  becauseYouListened: { artist: string; tracks: Track[] }[];
+  /** 从远程获取的额外推荐曲目 */
+  remoteRecs: Track[];
 }
 
 /**
- * 生成主页推荐
+ * 异步获取远程推荐曲目（基于历史艺人搜索）
+ */
+export const fetchRemoteRecommendations = async (
+  history: Track[],
+  favorites: Track[],
+  jamendoClientId?: string,
+): Promise<{ artist: string; tracks: Track[] }[]> => {
+  const topArtists = topArtistsFromHistory([...history, ...favorites], 3);
+  if (topArtists.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    topArtists.map(async (a) => {
+      const tracks = await fetchRecommendationTracks([a.originalName], jamendoClientId, 6);
+      return { artist: a.originalName, tracks: tracks.slice(0, 6) };
+    }),
+  );
+
+  return results
+    .filter((r): r is PromiseFulfilledResult<{ artist: string; tracks: Track[] }> =>
+      r.status === "fulfilled" && r.value.tracks.length > 0,
+    )
+    .map((r) => r.value);
+};
+
+/**
+ * 生成主页推荐（同步部分）
  * @param allTracks 当前库中所有曲目
  * @param history 最近播放历史
  * @param favorites 收藏曲目
@@ -154,26 +193,29 @@ export const generateRecommendations = (
   const greeting = getGreeting();
   const rng = mulberry32(dailySeed() + allTracks.length);
 
-  // 去重并完整版优先
-  const unique = dedupeTracks(sortFullFirst(allTracks));
+  // 合并库 + 历史 + 收藏后去重，提供更大的推荐池
+  const pool = dedupeTracks(sortFullFirst([...allTracks, ...history, ...favorites]));
 
-  // 精选：优先完整版 + 播放量/热度无法知道，随机选一首完整版
-  const fullTracks = unique.filter((t) => !t.preview);
-  const featured = fullTracks.length > 0 ? fullTracks[0] : unique[0] || null;
+  // 精选：优先完整版，随机选一首
+  const fullTracks = pool.filter((t) => !t.preview);
+  const featured = fullTracks.length > 0
+    ? fullTracks[Math.floor(rng() * Math.min(5, fullTracks.length))]
+    : pool[0] || null;
 
   // 热门趋势：随机shuffle前 N 首
-  const trending = shuffleWithRng([...unique], rng).slice(0, 6);
+  const trending = shuffleWithRng([...pool], rng).slice(0, 8);
 
   // 为你推荐：基于历史加权排序后取前 N
-  const scored = unique.map((t) => ({
+  const combinedHistory = [...history, ...favorites];
+  const scored = pool.map((t) => ({
     track: t,
-    score: scoreTrackForHistory(t, history) + scoreTrackForHistory(t, favorites),
+    score: scoreTrackForHistory(t, combinedHistory),
   }));
   scored.sort((a, b) => b.score - a.score);
-  const forYou = scored.slice(0, 6).map((s) => s.track);
+  const forYou = scored.slice(0, 8).map((s) => s.track);
 
   // 完整版专区
-  const fullVersions = fullTracks.slice(0, 6);
+  const fullVersions = fullTracks.slice(0, 8);
 
   // 随机发现：从非推荐池中随机选
   const usedIds = new Set([
@@ -182,11 +224,22 @@ export const generateRecommendations = (
     ...fullVersions.map((t) => t.id),
     ...(featured ? [featured.id] : []),
   ]);
-  const pool = unique.filter((t) => !usedIds.has(t.id));
-  const discoveries = shuffleWithRng(pool, rng).slice(0, 6);
+  const remaining = pool.filter((t) => !usedIds.has(t.id));
+  const discoveries = shuffleWithRng(remaining, rng).slice(0, 8);
 
   // 快速播放：综合精选+热门+完整版
-  const quickPicks = dedupeTracks([featured, ...trending, ...fullVersions].filter(Boolean) as Track[]).slice(0, 10);
+  const quickPicks = dedupeTracks(
+    [featured, ...trending, ...fullVersions].filter(Boolean) as Track[],
+  ).slice(0, 12);
+
+  // "因为你听过"（同步部分，仅基于已有数据）
+  const topArtists = topArtistsFromHistory(combinedHistory, 3);
+  const becauseYouListened = topArtists.map((a) => ({
+    artist: a.originalName,
+    tracks: pool
+      .filter((t) => normalize(t.artist) === a.artist)
+      .slice(0, 6),
+  })).filter((g) => g.tracks.length > 0);
 
   return {
     greeting,
@@ -196,6 +249,8 @@ export const generateRecommendations = (
     fullVersions,
     discoveries,
     quickPicks,
+    becauseYouListened,
+    remoteRecs: [],
   };
 };
 

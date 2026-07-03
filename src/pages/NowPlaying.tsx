@@ -13,6 +13,11 @@ import {
   VolumeX,
   ListMusic,
   ChevronLeft,
+  Download,
+  Check,
+  Loader2,
+  X,
+  Mic2,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { SeekBar } from "../components/layout/SeekBar";
@@ -48,7 +53,6 @@ function LyricList({
 }) {
   const lastIdxRef = useRef(-1);
 
-  // 精准滚动：仅在当前行变化时定位一次，用绝对 offsetTop 避免累加误差
   useEffect(() => {
     const container = scrollRef.current;
     if (!container || currentIndex < 0) return;
@@ -68,7 +72,6 @@ function LyricList({
     });
   }, [currentIndex, scrollRef, reduceMotion]);
 
-  // 歌词切换时重置
   useEffect(() => {
     lastIdxRef.current = -1;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
@@ -101,7 +104,6 @@ function LyricList({
           transform: "scale(1)",
         };
       }
-      // blur
       return {
         fontSize,
         fontWeight: 400,
@@ -127,12 +129,11 @@ function LyricList({
     >
       {loading ? (
         <div className="flex h-full items-center justify-center">
-          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-            歌词加载中…
-          </p>
+          <Loader2 size={20} className="animate-spin" style={{ color: "var(--text-secondary)" }} />
         </div>
       ) : lyrics.length === 0 ? (
-        <div className="flex h-full items-center justify-center">
+        <div className="flex h-full flex-col items-center justify-center gap-2">
+          <Mic2 size={28} style={{ color: "var(--text-secondary)", opacity: 0.4 }} />
           <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
             暂无歌词
           </p>
@@ -156,111 +157,165 @@ function LyricList({
   );
 }
 
-/* ---------- 封面与信息 ---------- */
-function CoverInfo({
+/* ---------- 黑胶唱片封面 ---------- */
+function VinylCover({
   track,
-  liked,
-  srcInfo,
-  osuDownloadProgress,
-  onFavorite,
-  iconBtn,
-  showSwipeHint,
+  isPlaying,
+  reduceMotion,
 }: {
   track: Track;
-  liked: boolean;
-  srcInfo: { label: string } | null;
-  osuDownloadProgress: number;
-  onFavorite: () => void;
-  iconBtn: (active?: boolean) => React.CSSProperties;
-  showSwipeHint: boolean;
+  isPlaying: boolean;
+  reduceMotion: boolean;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 md:gap-6">
+    <div className="relative flex items-center justify-center">
+      {/* 唱片底盘 */}
       <div
-        className="overflow-hidden rounded-2xl shadow-2xl"
+        className="relative overflow-hidden rounded-full shadow-2xl"
         style={{
-          width: "min(56vw, 280px)",
-          height: "min(56vw, 280px)",
-          maxWidth: 280,
-          maxHeight: 280,
+          width: "min(62vw, 300px)",
+          height: "min(62vw, 300px)",
+          maxWidth: 300,
+          maxHeight: 300,
         }}
       >
-        <CoverImage
-          src={track.cover}
-          alt={track.title}
-          className="h-full w-full object-cover"
-          iconSize={48}
+        {/* 黑胶纹理背景 */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background: "radial-gradient(circle, #1a1a1a 30%, #0a0a0a 100%)",
+          }}
+        >
+          {/* 同心圆纹路 */}
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                inset: `${(i + 1) * 4}%`,
+                border: "0.5px solid rgba(255,255,255,0.04)",
+              }}
+            />
+          ))}
+        </div>
+
+        {/* 封面图（旋转） */}
+        <div
+          className="absolute inset-0 flex items-center justify-center"
+          style={{
+            animation: reduceMotion
+              ? "none"
+              : isPlaying
+                ? "vinyl-spin 8s linear infinite"
+                : "none",
+            animationPlayState: isPlaying ? "running" : "paused",
+          }}
+        >
+          <div
+            className="overflow-hidden rounded-full"
+            style={{ width: "55%", height: "55%" }}
+          >
+            <CoverImage
+              src={track.cover}
+              alt={track.title}
+              className="h-full w-full object-cover"
+              iconSize={48}
+            />
+          </div>
+        </div>
+
+        {/* 中心孔 */}
+        <div
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{
+            width: 12,
+            height: 12,
+            background: "#000",
+            border: "2px solid rgba(255,255,255,0.15)",
+          }}
         />
       </div>
+    </div>
+  );
+}
 
-      <div className="flex w-full max-w-md items-start justify-between gap-3 px-1">
-        <div className="min-w-0 flex-1">
-          <h1
-            className="flex items-center gap-2 truncate text-xl font-bold md:text-2xl"
-            style={{ color: "var(--text-primary)" }}
+/* ---------- 播放队列面板 ---------- */
+function QueuePanel({
+  onClose,
+  onPlay,
+}: {
+  onClose: () => void;
+  onPlay: (track: Track, context: Track[]) => void;
+}) {
+  const contextQueue = useAppStore((s) => s.player.contextQueue);
+  const libraryTracks = useAppStore((s) => s.library.tracks);
+  const currentTrack = useAppStore((s) => s.player.currentTrack);
+  const queue = contextQueue.length > 0 ? contextQueue : libraryTracks;
+
+  return (
+    <div
+      className="absolute inset-0 z-20 flex flex-col"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(20px)" }}
+      onClick={onClose}
+    >
+      <div
+        className="mt-auto max-h-[60%] overflow-hidden rounded-t-3xl"
+        style={{ background: "var(--surface)" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4">
+          <div className="flex items-center gap-2">
+            <ListMusic size={18} style={{ color: "var(--accent)" }} />
+            <h3 className="text-base font-bold" style={{ color: "var(--text-primary)" }}>
+              播放队列
+            </h3>
+            <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {queue.length} 首
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            style={{ border: "none", background: "transparent", color: "var(--text-secondary)", cursor: "pointer" }}
           >
-            <span className="truncate">{track.title}</span>
-            <SourceIcon source={track.source} size={13} />
-          </h1>
-          <p
-            className="truncate text-sm md:text-base"
-            style={{ color: "var(--text-secondary)" }}
-          >
-            {track.artist}
-          </p>
-          {srcInfo && (
-            <p
-              className="mt-1 text-[11px]"
-              style={{ color: "var(--text-secondary)", opacity: 0.7 }}
-            >
-              来源 · {srcInfo.label}
-            </p>
-          )}
-          {osuDownloadProgress >= 0 && (
-            <div className="mt-2 flex items-center gap-2">
-              <span className="text-[10px]" style={{ color: "var(--accent)" }}>
-                下载完整音频中
-              </span>
-              <div
-                className="h-1 w-24 overflow-hidden rounded-full"
-                style={{ background: "var(--surface-elevated)" }}
-              >
-                <div
-                  className="h-full rounded-full transition-all"
-                  style={{
-                    width: `${Math.round(osuDownloadProgress * 100)}%`,
-                    background: "var(--accent)",
-                  }}
-                />
-              </div>
-              <span
-                className="text-[10px] tabular-nums"
-                style={{ color: "var(--text-secondary)" }}
-              >
-                {Math.round(osuDownloadProgress * 100)}%
-              </span>
-            </div>
-          )}
+            <X size={20} />
+          </button>
         </div>
-        <button
-          onClick={onFavorite}
-          style={iconBtn(liked)}
-          aria-label="收藏"
-          className="shrink-0 hover:scale-110"
-        >
-          <Heart size={26} fill={liked ? "currentColor" : "none"} />
-        </button>
+        <div className="max-h-[400px] overflow-y-auto px-3 pb-5">
+          {queue.map((track, i) => {
+            const active = currentTrack?.id === track.id;
+            return (
+              <button
+                key={track.id}
+                onClick={() => onPlay(track, queue)}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                style={{ border: "none", background: "transparent", cursor: "pointer" }}
+              >
+                <span className="w-5 text-center text-xs tabular-nums" style={{ color: active ? "var(--accent)" : "var(--text-secondary)" }}>
+                  {i + 1}
+                </span>
+                <div className="shrink-0 overflow-hidden rounded-md" style={{ width: 36, height: 36 }}>
+                  <CoverImage src={track.cover} alt={track.title} className="h-full w-full object-cover" iconSize={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium" style={{ color: active ? "var(--accent)" : "var(--text-primary)" }}>
+                    {track.title}
+                  </div>
+                  <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {track.artist}
+                  </div>
+                </div>
+                {active && (
+                  <div className="flex items-end gap-0.5" style={{ color: "var(--accent)", height: 16 }}>
+                    <span style={{ width: 3, height: 8, background: "currentColor", borderRadius: 2, animation: "vinyl-spin 1s ease-in-out infinite alternate" }} />
+                    <span style={{ width: 3, height: 12, background: "currentColor", borderRadius: 2, animation: "vinyl-spin 0.8s ease-in-out infinite alternate-reverse" }} />
+                    <span style={{ width: 3, height: 6, background: "currentColor", borderRadius: 2, animation: "vinyl-spin 1.2s ease-in-out infinite alternate" }} />
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
-
-      {showSwipeHint && (
-        <div
-          className="flex items-center gap-1 text-xs"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          <ChevronLeft size={12} />
-          <span>右滑返回 · 左滑查看歌词</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -283,6 +338,7 @@ export default function NowPlaying() {
   const lyricsLoading = useAppStore((s) => s.player.lyricsLoading);
   const currentLyricIndex = useAppStore((s) => s.player.currentLyricIndex);
   const osuDownloadProgress = useAppStore((s) => s.player.osuDownloadProgress);
+  const downloadProgress = useAppStore((s) => s.player.downloadProgress);
 
   const togglePlay = useAppStore((s) => s.togglePlay);
   const nextTrack = useAppStore((s) => s.nextTrack);
@@ -294,6 +350,10 @@ export default function NowPlaying() {
   const setShowNowPlaying = useAppStore((s) => s.showNowPlaying);
   const toggleFavorite = useAppStore((s) => s.toggleFavorite);
   const isFavorite = useAppStore((s) => s.isFavorite);
+  const playTrack = useAppStore((s) => s.playTrack);
+  const downloadTrack = useAppStore((s) => s.downloadTrack);
+  const isDownloaded = useAppStore((s) => s.isDownloaded);
+  const removeDownloadedTrack = useAppStore((s) => s.removeDownloadedTrack);
 
   const scheme = theme === "dark" ? "dark" : "light";
   const isDark = scheme === "dark";
@@ -301,10 +361,13 @@ export default function NowPlaying() {
   const isMuted = volume === 0;
   const liked = currentTrack ? isFavorite(currentTrack.id) : false;
   const srcInfo = currentTrack ? sourceInfo(currentTrack.source) : null;
+  const downloaded = currentTrack ? isDownloaded(currentTrack.id) : false;
+  const dlProgress = currentTrack ? downloadProgress[currentTrack.id] : undefined;
 
   const lyricScrollRef = useRef<HTMLDivElement>(null);
   const lyricScrollRefMobile = useRef<HTMLDivElement>(null);
-  const [mobilePage, setMobilePage] = useState(0); // 0 封面, 1 歌词
+  const [mobilePage, setMobilePage] = useState(0);
+  const [showQueue, setShowQueue] = useState(false);
 
   const fontSize = useMemo(
     () =>
@@ -332,9 +395,18 @@ export default function NowPlaying() {
     [isDark],
   );
 
-  // 切歌重置移动页
+  const handleDownload = async () => {
+    if (!currentTrack || downloaded || dlProgress !== undefined) return;
+    try {
+      await downloadTrack(currentTrack);
+    } catch {
+      // 静默失败
+    }
+  };
+
   useEffect(() => {
     setMobilePage(0);
+    setShowQueue(false);
   }, [currentTrack?.id]);
 
   // 移动端水平滑动切换
@@ -423,9 +495,18 @@ export default function NowPlaying() {
           backgroundImage: `url(${currentTrack.cover})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
-          filter: "blur(60px)",
-          opacity: 0.25,
-          transform: "scale(1.2)",
+          filter: "blur(80px)",
+          opacity: 0.3,
+          transform: "scale(1.3)",
+        }}
+      />
+      {/* 渐变遮罩 */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: isDark
+            ? "linear-gradient(180deg, rgba(9,9,12,0.4) 0%, rgba(9,9,12,0.7) 50%, rgba(9,9,12,0.9) 100%)"
+            : "linear-gradient(180deg, rgba(232,234,239,0.4) 0%, rgba(232,234,239,0.7) 50%, rgba(232,234,239,0.9) 100%)",
         }}
       />
 
@@ -453,7 +534,12 @@ export default function NowPlaying() {
             {currentTrack.album || currentTrack.title}
           </div>
         </div>
-        <button style={iconBtn()} aria-label="队列">
+        <button
+          onClick={() => setShowQueue(true)}
+          style={iconBtn()}
+          aria-label="播放队列"
+          className="hover:scale-110"
+        >
           <ListMusic size={22} />
         </button>
       </div>
@@ -462,17 +548,84 @@ export default function NowPlaying() {
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-4 md:px-8">
         {/* 桌面端：左右分栏 */}
         <div className="hidden min-h-0 flex-1 grid-cols-2 items-center gap-10 md:grid">
-          <div className="flex h-full items-center justify-center overflow-hidden">
-            <CoverInfo
-              track={currentTrack}
-              liked={liked}
-              srcInfo={srcInfo}
-              osuDownloadProgress={osuDownloadProgress}
-              onFavorite={() => toggleFavorite(currentTrack)}
-              iconBtn={iconBtn}
-              showSwipeHint={false}
-            />
+          {/* 左侧：唱片 + 信息 + 操作 */}
+          <div className="flex h-full flex-col items-center justify-center gap-5">
+            <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
+
+            <div className="flex w-full max-w-md flex-col items-center gap-2">
+              <h1
+                className="flex items-center gap-2 text-xl font-bold md:text-2xl"
+                style={{ color: "var(--text-primary)" }}
+              >
+                <span className="truncate">{currentTrack.title}</span>
+                <SourceIcon source={currentTrack.source} size={13} />
+              </h1>
+              <p className="text-sm md:text-base" style={{ color: "var(--text-secondary)" }}>
+                {currentTrack.artist}
+              </p>
+              {srcInfo && (
+                <p className="text-[11px]" style={{ color: "var(--text-secondary)", opacity: 0.7 }}>
+                  {srcInfo.label}
+                </p>
+              )}
+
+              {/* 下载进度条 */}
+              {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
+                <div className="flex w-full max-w-xs items-center gap-2">
+                  <Loader2 size={12} className="animate-spin" style={{ color: "var(--accent)" }} />
+                  <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-elevated)" }}>
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.round((dlProgress ?? osuDownloadProgress) * 100)}%`,
+                        background: "var(--accent)",
+                      }}
+                    />
+                  </div>
+                  <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                    {Math.round((dlProgress ?? osuDownloadProgress) * 100)}%
+                  </span>
+                </div>
+              )}
+
+              {/* 操作按钮 */}
+              <div className="mt-1 flex items-center gap-2">
+                <button
+                  onClick={() => toggleFavorite(currentTrack)}
+                  style={iconBtn(liked)}
+                  aria-label="收藏"
+                  className="hover:scale-110"
+                >
+                  <Heart size={22} fill={liked ? "currentColor" : "none"} />
+                </button>
+                {downloaded ? (
+                  <button
+                    onClick={() => removeDownloadedTrack(currentTrack.id)}
+                    style={iconBtn(true)}
+                    aria-label="已下载，点击删除"
+                    className="hover:scale-110"
+                  >
+                    <Check size={20} />
+                  </button>
+                ) : dlProgress !== undefined ? (
+                  <div style={iconBtn(true)} aria-label="下载中">
+                    <Loader2 size={20} className="animate-spin" />
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleDownload}
+                    style={iconBtn()}
+                    aria-label="下载"
+                    className="hover:scale-110"
+                  >
+                    <Download size={20} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
+
+          {/* 右侧：歌词 */}
           <div className="flex h-full min-h-0 flex-col">
             <span
               className="mb-2 text-xs font-medium uppercase tracking-wider"
@@ -492,34 +645,100 @@ export default function NowPlaying() {
               transform: `translateX(${mobilePage === 0 ? "0%" : "-100%"})`,
             }}
           >
-            <div className="flex w-full shrink-0 flex-col justify-center overflow-hidden">
-              <CoverInfo
-                track={currentTrack}
-                liked={liked}
-                srcInfo={srcInfo}
-                osuDownloadProgress={osuDownloadProgress}
-                onFavorite={() => toggleFavorite(currentTrack)}
-                iconBtn={iconBtn}
-                showSwipeHint
-              />
+            {/* 封面页 */}
+            <div className="flex w-full shrink-0 flex-col items-center justify-center gap-4 overflow-hidden">
+              <VinylCover track={currentTrack} isPlaying={isPlaying} reduceMotion={reduceMotion} />
+
+              <div className="flex w-full max-w-sm flex-col items-center gap-1">
+                <h1
+                  className="flex items-center gap-2 text-lg font-bold"
+                  style={{ color: "var(--text-primary)" }}
+                >
+                  <span className="truncate">{currentTrack.title}</span>
+                  <SourceIcon source={currentTrack.source} size={12} />
+                </h1>
+                <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+                  {currentTrack.artist}
+                </p>
+                {srcInfo && (
+                  <p className="text-[10px]" style={{ color: "var(--text-secondary)", opacity: 0.7 }}>
+                    {srcInfo.label}
+                  </p>
+                )}
+
+                {/* 下载进度条 */}
+                {(osuDownloadProgress >= 0 || dlProgress !== undefined) && (
+                  <div className="flex w-full max-w-xs items-center gap-2 mt-1">
+                    <Loader2 size={12} className="animate-spin" style={{ color: "var(--accent)" }} />
+                    <div className="h-1 flex-1 overflow-hidden rounded-full" style={{ background: "var(--surface-elevated)" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${Math.round((dlProgress ?? osuDownloadProgress) * 100)}%`,
+                          background: "var(--accent)",
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] tabular-nums" style={{ color: "var(--text-secondary)" }}>
+                      {Math.round((dlProgress ?? osuDownloadProgress) * 100)}%
+                    </span>
+                  </div>
+                )}
+
+                {/* 操作按钮 */}
+                <div className="mt-2 flex items-center gap-3">
+                  <button
+                    onClick={() => toggleFavorite(currentTrack)}
+                    style={iconBtn(liked)}
+                    aria-label="收藏"
+                    className="hover:scale-110"
+                  >
+                    <Heart size={20} fill={liked ? "currentColor" : "none"} />
+                  </button>
+                  {downloaded ? (
+                    <button
+                      onClick={() => removeDownloadedTrack(currentTrack.id)}
+                      style={iconBtn(true)}
+                      aria-label="已下载，点击删除"
+                      className="hover:scale-110"
+                    >
+                      <Check size={18} />
+                    </button>
+                  ) : dlProgress !== undefined ? (
+                    <div style={iconBtn(true)} aria-label="下载中">
+                      <Loader2 size={18} className="animate-spin" />
+                    </div>
+                  ) : (
+                    <button
+                      onClick={handleDownload}
+                      style={iconBtn()}
+                      aria-label="下载"
+                      className="hover:scale-110"
+                    >
+                      <Download size={18} />
+                    </button>
+                  )}
+                </div>
+
+                {mobilePage === 0 && (
+                  <div className="mt-2 flex items-center gap-1 text-xs" style={{ color: "var(--text-secondary)" }}>
+                    <ChevronLeft size={12} />
+                    <span>左滑查看歌词</span>
+                  </div>
+                )}
+              </div>
             </div>
+
+            {/* 歌词页 */}
             <div className="flex w-full shrink-0 flex-col overflow-hidden pl-3">
               <div className="mb-2 flex items-center justify-between">
-                <span
-                  className="text-xs font-medium uppercase tracking-wider"
-                  style={{ color: "var(--text-secondary)" }}
-                >
+                <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--text-secondary)" }}>
                   歌词
                 </span>
                 <button
                   onClick={() => setMobilePage(0)}
                   className="flex items-center gap-0.5 text-xs"
-                  style={{
-                    color: "var(--accent)",
-                    border: "none",
-                    background: "transparent",
-                    cursor: "pointer",
-                  }}
+                  style={{ color: "var(--accent)", border: "none", background: "transparent", cursor: "pointer" }}
                 >
                   <ChevronLeft size={12} /> 封面
                 </button>
@@ -539,8 +758,7 @@ export default function NowPlaying() {
                   width: mobilePage === p ? 16 : 6,
                   height: 6,
                   borderRadius: 3,
-                  background:
-                    mobilePage === p ? "var(--accent)" : "var(--text-secondary)",
+                  background: mobilePage === p ? "var(--accent)" : "var(--text-secondary)",
                   opacity: mobilePage === p ? 1 : 0.4,
                   border: "none",
                   cursor: "pointer",
@@ -556,57 +774,23 @@ export default function NowPlaying() {
       <div className="relative z-10 shrink-0 px-4 pb-6 md:px-10 md:pb-8">
         {/* 进度条 */}
         <div className="mb-4 flex items-center gap-3">
-          <span
-            className="text-[11px] tabular-nums"
-            style={{
-              color: "var(--text-secondary)",
-              width: 38,
-              textAlign: "right",
-              flexShrink: 0,
-            }}
-          >
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)", width: 38, textAlign: "right", flexShrink: 0 }}>
             {formatTime(currentTime)}
           </span>
-          <div
-            className="flex flex-1 items-center"
-            style={{ minHeight: 28 }}
-          >
-            <SeekBar
-              progress={progress}
-              onSeek={seekTo}
-              scheme={scheme}
-              thumbHeight={18}
-              height={5}
-            />
+          <div className="flex flex-1 items-center" style={{ minHeight: 28 }}>
+            <SeekBar progress={progress} onSeek={seekTo} scheme={scheme} thumbHeight={18} height={5} />
           </div>
-          <span
-            className="text-[11px] tabular-nums"
-            style={{
-              color: "var(--text-secondary)",
-              width: 38,
-              flexShrink: 0,
-            }}
-          >
+          <span className="text-[11px] tabular-nums" style={{ color: "var(--text-secondary)", width: 38, flexShrink: 0 }}>
             {formatTime(displayDuration)}
           </span>
         </div>
 
         {/* 控制按钮 */}
         <div className="flex items-center justify-center gap-5 md:gap-10">
-          <button
-            style={iconBtn(shuffle)}
-            onClick={toggleShuffle}
-            aria-label="随机播放"
-            className="hidden md:inline-flex hover:scale-110"
-          >
+          <button style={iconBtn(shuffle)} onClick={toggleShuffle} aria-label="随机播放" className="hidden md:inline-flex hover:scale-110">
             <Shuffle size={20} />
           </button>
-          <button
-            style={iconBtn()}
-            onClick={prevTrack}
-            aria-label="上一首"
-            className="hover:scale-110"
-          >
+          <button style={iconBtn()} onClick={prevTrack} aria-label="上一首" className="hover:scale-110">
             <SkipBack size={26} fill="currentColor" />
           </button>
           <button
@@ -623,54 +807,41 @@ export default function NowPlaying() {
               alignItems: "center",
               justifyContent: "center",
               transition: "transform 0.15s ease",
-              boxShadow: "0 4px 14px rgba(0,0,0,0.22)",
+              boxShadow: "0 4px 20px var(--accent-soft)",
             }}
             className="hover:scale-105"
           >
-            {isPlaying ? (
-              <Pause size={30} fill="currentColor" />
-            ) : (
-              <Play size={30} fill="currentColor" />
-            )}
+            {isPlaying ? <Pause size={30} fill="currentColor" /> : <Play size={30} fill="currentColor" />}
           </button>
-          <button
-            style={iconBtn()}
-            onClick={nextTrack}
-            aria-label="下一首"
-            className="hover:scale-110"
-          >
+          <button style={iconBtn()} onClick={nextTrack} aria-label="下一首" className="hover:scale-110">
             <SkipForward size={26} fill="currentColor" />
           </button>
-          <button
-            style={iconBtn(repeat !== "off")}
-            onClick={cycleRepeat}
-            aria-label="循环"
-            className="hidden md:inline-flex hover:scale-110"
-          >
+          <button style={iconBtn(repeat !== "off")} onClick={cycleRepeat} aria-label="循环" className="hidden md:inline-flex hover:scale-110">
             {repeat === "one" ? <Repeat1 size={20} /> : <Repeat size={20} />}
           </button>
         </div>
 
         {/* 音量（桌面） */}
         <div className="mt-4 hidden items-center justify-center gap-2 md:flex">
-          <button
-            style={iconBtn(isMuted)}
-            onClick={() => setVolume(isMuted ? 0.8 : 0)}
-            aria-label="静音"
-          >
+          <button style={iconBtn(isMuted)} onClick={() => setVolume(isMuted ? 0.8 : 0)} aria-label="静音">
             {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
           <div className="flex items-center" style={{ width: 140, minHeight: 28 }}>
-            <SeekBar
-              progress={volume}
-              onSeek={setVolume}
-              scheme={scheme}
-              thumbHeight={18}
-              height={5}
-            />
+            <SeekBar progress={volume} onSeek={setVolume} scheme={scheme} thumbHeight={18} height={5} />
           </div>
         </div>
       </div>
+
+      {/* 播放队列面板 */}
+      {showQueue && (
+        <QueuePanel
+          onClose={() => setShowQueue(false)}
+          onPlay={(track, ctx) => {
+            playTrack(track, ctx);
+            setShowQueue(false);
+          }}
+        />
+      )}
     </div>
   );
 }

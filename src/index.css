@@ -137,6 +137,11 @@ body {
   to { transform: rotate(360deg); }
 }
 
+@keyframes vinyl-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* utility for mac-glass sliders / switches */
 .mac-glass-control {
   touch-action: pan-y;

@@ -115,6 +115,8 @@ export interface PlayerState {
   history: Track[];
   favorites: Track[];
   playlists: Playlist[];
+  /** 已下载到本地的曲目（Blob 已存入 IndexedDB） */
+  downloadedTracks: Track[];
   showNowPlaying: boolean;
   lyrics: LyricLine[];
   lyricsLoading: boolean;
@@ -123,6 +125,8 @@ export interface PlayerState {
   contextQueue: Track[];
   /** osu! 谱面下载进度（0-1），-1 表示无下载 */
   osuDownloadProgress: number;
+  /** 手动下载进度：trackId → 0-1，不在列表中表示无下载 */
+  downloadProgress: Record<string, number>;
 }
 
 export interface LibraryState {

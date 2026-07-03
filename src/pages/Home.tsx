@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Play,
   Disc3,
@@ -15,7 +15,10 @@ import { useAppStore } from "@/store/useAppStore";
 import { GlassButton } from "@/components/glass/GlassButton";
 import { SourceIcon } from "@/components/common/SourceIcon";
 import { CoverImage } from "@/components/common/CoverImage";
-import { generateRecommendations } from "@/utils/recommendation";
+import {
+  fetchRemoteRecommendations,
+  generateRecommendations,
+} from "@/utils/recommendation";
 import { formatTime } from "@/utils/formatTime";
 import type { Track } from "@/types";
 
@@ -212,12 +215,55 @@ export default function Home() {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setOpenPlaylist = useAppStore((s) => s.setOpenPlaylist);
   const theme = useAppStore((s) => s.settings.theme);
+  const jamendoClientId = useAppStore((s) => s.settings.jamendoClientId);
   const scheme = theme === "dark" ? "dark" : "light";
 
   const recs = useMemo(
     () => generateRecommendations(tracks, history, favorites),
     [tracks, history, favorites],
   );
+
+  const [remoteRecs, setRemoteRecs] = useState<{ artist: string; tracks: Track[] }[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (history.length === 0 && favorites.length === 0) {
+      setRemoteRecs([]);
+      return;
+    }
+    fetchRemoteRecommendations(history, favorites, jamendoClientId).then((result) => {
+      if (!cancelled) setRemoteRecs(result);
+    }).catch(() => {
+      if (!cancelled) setRemoteRecs([]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [history, favorites, jamendoClientId]);
+
+  // 合并本地 becauseYouListened 与远程 remoteRecs，同一艺人合并 tracks 并去重
+  const mergedBecauseYouListened = useMemo(() => {
+    const map = new Map<string, { artist: string; tracks: Track[] }>();
+    const addEntries = (entries: { artist: string; tracks: Track[] }[]) => {
+      for (const entry of entries) {
+        const existing = map.get(entry.artist);
+        if (existing) {
+          const seenIds = new Set(existing.tracks.map((t) => t.id));
+          for (const t of entry.tracks) {
+            if (!seenIds.has(t.id)) {
+              existing.tracks.push(t);
+              seenIds.add(t.id);
+            }
+          }
+        } else {
+          map.set(entry.artist, { artist: entry.artist, tracks: [...entry.tracks] });
+        }
+      }
+    };
+    addEntries(recs.becauseYouListened);
+    addEntries(remoteRecs);
+    return Array.from(map.values()).filter((g) => g.tracks.length > 0);
+  }, [recs.becauseYouListened, remoteRecs]);
 
   useEffect(() => {
     if (tracks.length === 0 && !loading) {
@@ -512,6 +558,26 @@ export default function Home() {
           <CardRow tracks={recs.forYou} onPlay={(t) => handlePlay(t)} />
         )}
       </section>
+
+      {/* 因为你听过 */}
+      {mergedBecauseYouListened.length > 0 && (
+        <section className="animate-enter animate-enter-5">
+          <div className="flex flex-col gap-6">
+            {mergedBecauseYouListened.map((group) => (
+              <div key={group.artist}>
+                <SectionHeader
+                  icon={<Music2 size={18} />}
+                  title={`因为你听过 ${group.artist}`}
+                />
+                <CardRow
+                  tracks={group.tracks}
+                  onPlay={(t) => handlePlay(t, group.tracks)}
+                />
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* 随机发现 */}
       <section className="animate-enter animate-enter-5">

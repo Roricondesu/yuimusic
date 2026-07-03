@@ -10,9 +10,9 @@ import type {
   DownloadItem,
 } from "../types";
 import { fetchLyrics, findLyricIndex } from "../utils/lyrics";
-import { searchTracks } from "../utils/musicSources";
+import { searchTracks, downloadTrackAudio } from "../utils/musicSources";
 import { applyAccent } from "../utils/accents";
-import { getItem, setItem, STORAGE_KEYS } from "../lib/storage";
+import { getItem, setItem, setBlob, getBlob, removeBlob, STORAGE_KEYS } from "../lib/storage";
 
 const applyTheme = (theme: AppSettings["theme"]) => {
   if (typeof document === "undefined") return;
@@ -65,6 +65,7 @@ const persistPlaylists = (playlists: Playlist[]) => setItem(STORAGE_KEYS.playlis
 const persistHistory = (history: Track[]) => setItem(STORAGE_KEYS.history, history);
 const persistSettings = (settings: AppSettings) => setItem(STORAGE_KEYS.settings, settings);
 const persistDownloads = (downloads: DownloadItem[]) => setItem(STORAGE_KEYS.downloads, downloads);
+const persistDownloadedTracks = (tracks: Track[]) => setItem(STORAGE_KEYS.downloadedTracks, tracks);
 
 interface AppState {
   activeTab: TabKey;
@@ -117,6 +118,16 @@ interface AppState {
   removeDownload: (trackId: string) => void;
   clearDownloads: () => void;
 
+  // 本地下载（离线播放）
+  /** 下载曲目音频到 IndexedDB */
+  downloadTrack: (track: Track) => Promise<void>;
+  /** 检查曲目是否已下载 */
+  isDownloaded: (trackId: string) => boolean;
+  /** 获取已下载曲目的本地 Blob URL（无则返回 null） */
+  getDownloadedUrl: (trackId: string) => Promise<string | null>;
+  /** 删除已下载的曲目 */
+  removeDownloadedTrack: (trackId: string) => Promise<void>;
+
   settings: AppSettings;
   setTheme: (theme: AppSettings["theme"]) => void;
   setAccent: (accent: AppSettings["accent"]) => void;
@@ -146,12 +157,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     history: [],
     favorites: [],
     playlists: [],
+    downloadedTracks: [],
     showNowPlaying: false,
     lyrics: [],
     lyricsLoading: false,
     currentLyricIndex: -1,
     contextQueue: [],
     osuDownloadProgress: -1,
+    downloadProgress: {},
   },
 
   playTrack: (track, context) => {
@@ -506,6 +519,78 @@ export const useAppStore = create<AppState>((set, get) => ({
     persistDownloads([]);
   },
 
+  // === 本地下载（离线播放） ===
+  downloadTrack: async (track) => {
+    // 已下载则跳过
+    if (get().player.downloadedTracks.some((t) => t.id === track.id)) return;
+    const mirror = get().settings.osuMirror;
+
+    // 设置进度
+    set((s) => ({
+      player: {
+        ...s.player,
+        downloadProgress: { ...s.player.downloadProgress, [track.id]: 0 },
+      },
+    }));
+
+    try {
+      const blob = await downloadTrackAudio(
+        track,
+        (ratio) => {
+          set((s) => ({
+            player: {
+              ...s.player,
+              downloadProgress: { ...s.player.downloadProgress, [track.id]: ratio },
+            },
+          }));
+        },
+        mirror,
+      );
+      // 存储 Blob 到 IndexedDB
+      await setBlob(`audio:${track.id}`, blob);
+      // 更新已下载列表
+      const downloadedTracks = [track, ...get().player.downloadedTracks];
+      set((s) => {
+        const dp = { ...s.player.downloadProgress };
+        delete dp[track.id];
+        return {
+          player: {
+            ...s.player,
+            downloadedTracks,
+            downloadProgress: dp,
+          },
+        };
+      });
+      persistDownloadedTracks(downloadedTracks);
+    } catch (e) {
+      // 清除进度
+      set((s) => {
+        const dp = { ...s.player.downloadProgress };
+        delete dp[track.id];
+        return { player: { ...s.player, downloadProgress: dp } };
+      });
+      throw e;
+    }
+  },
+
+  isDownloaded: (trackId) =>
+    get().player.downloadedTracks.some((t) => t.id === trackId),
+
+  getDownloadedUrl: async (trackId) => {
+    const blob = await getBlob(`audio:${trackId}`);
+    if (!blob) return null;
+    return URL.createObjectURL(blob);
+  },
+
+  removeDownloadedTrack: async (trackId) => {
+    await removeBlob(`audio:${trackId}`);
+    const downloadedTracks = get().player.downloadedTracks.filter(
+      (t) => t.id !== trackId,
+    );
+    set((s) => ({ player: { ...s.player, downloadedTracks } }));
+    persistDownloadedTracks(downloadedTracks);
+  },
+
   settings: { ...DEFAULT_SETTINGS },
 
   setTheme: (theme) => {
@@ -532,12 +617,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   init: async () => {
     // 从 IndexedDB 恢复持久化状态
-    const [favorites, playlists, history, savedSettings, downloads] = await Promise.all([
+    const [favorites, playlists, history, savedSettings, downloads, downloadedTracks] = await Promise.all([
       getItem<Track[]>(STORAGE_KEYS.favorites, []),
       getItem<Playlist[]>(STORAGE_KEYS.playlists, []),
       getItem<Track[]>(STORAGE_KEYS.history, []),
       getItem<Partial<AppSettings>>(STORAGE_KEYS.settings, {}),
       getItem<DownloadItem[]>(STORAGE_KEYS.downloads, []),
+      getItem<Track[]>(STORAGE_KEYS.downloadedTracks, []),
     ]);
 
     const settings = { ...DEFAULT_SETTINGS, ...savedSettings };
@@ -550,6 +636,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         favorites,
         playlists,
         history,
+        downloadedTracks,
       },
       downloads,
       settings,

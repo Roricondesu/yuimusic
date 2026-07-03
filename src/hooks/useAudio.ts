@@ -121,10 +121,35 @@ export const useAudio = () => {
     );
     osuMetaHandlersRef.current.clear();
 
+    // 优先使用已下载的本地 Blob（离线播放）
+    const useDownloadedBlob = async () => {
+      const localUrl = await useAppStore.getState().getDownloadedUrl(currentTrack.id);
+      if (!localUrl) return false;
+      // 确认用户仍在听同一首
+      if (useAppStore.getState().player.currentTrack?.id !== currentTrack.id) {
+        URL.revokeObjectURL(localUrl);
+        return false;
+      }
+      audio.src = localUrl;
+      audio.load();
+      actualSrcRef.current = localUrl;
+      osuBlobTrackIdRef.current = currentTrack.id;
+      if (isPlaying) {
+        audio.play().catch(() => setPlaying(false));
+      } else {
+        audio.pause();
+      }
+      return true;
+    };
+
     const isOsuPreview =
       currentTrack.source === "osu" &&
       currentTrack.preview &&
       currentTrack.osuSetId != null;
+
+    // 尝试使用本地下载，失败则回退到正常流程
+    useDownloadedBlob().then((used) => {
+      if (used) return;
 
     if (isOsuPreview) {
       // 先用官方 preview 播放，保证即时响应。
@@ -229,6 +254,7 @@ export const useAudio = () => {
     } else {
       audio.pause();
     }
+    }); // end useDownloadedBlob.then
   }, [currentTrack, isPlaying, setPlaying, osuMirror]);
 
   useEffect(() => {

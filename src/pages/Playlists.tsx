@@ -10,6 +10,7 @@ import {
   Clock,
   MoreVertical,
   X,
+  DownloadCloud,
 } from "lucide-react";
 import { useAppStore } from "../store/useAppStore";
 import { formatTime } from "../utils/formatTime";
@@ -32,6 +33,11 @@ export default function Playlists() {
   const isPlaying = useAppStore((s) => s.player.isPlaying);
   const playTrack = useAppStore((s) => s.playTrack);
   const togglePlay = useAppStore((s) => s.togglePlay);
+  const downloadedTracks = useAppStore((s) => s.player.downloadedTracks);
+  const removeDownloadedTrack = useAppStore((s) => s.removeDownloadedTrack);
+  const downloadTrack = useAppStore((s) => s.downloadTrack);
+  const isDownloaded = useAppStore((s) => s.isDownloaded);
+  const downloadProgress = useAppStore((s) => s.player.downloadProgress);
 
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -359,6 +365,77 @@ export default function Playlists() {
               >
                 取消
               </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {downloadedTracks.length > 0 && (
+        <section className="animate-enter animate-enter-2">
+          <div className="solid-card p-3 md:p-5">
+            <div className="mb-3 flex items-center gap-2 px-2">
+              <DownloadCloud size={18} style={{ color: "var(--accent)" }} />
+              <h2 className="text-base font-semibold" style={{ color: "var(--text-primary)" }}>
+                已下载音乐
+              </h2>
+              <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                {downloadedTracks.length} 首
+              </span>
+            </div>
+            <div className="flex flex-col">
+              {downloadedTracks.slice(0, 10).map((track) => {
+                const active = currentTrack?.id === track.id;
+                return (
+                  <div
+                    key={track.id}
+                    onClick={() => playTrack(track, downloadedTracks)}
+                    className="group flex cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  >
+                    <div
+                      className="shrink-0 overflow-hidden rounded-md"
+                      style={{ width: 40, height: 40, background: "rgba(128,128,128,0.15)" }}
+                    >
+                      <CoverImage
+                        src={track.cover}
+                        alt={track.title}
+                        className="h-full w-full object-cover"
+                        iconSize={18}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="truncate text-sm font-medium"
+                          style={{ color: active ? "var(--accent)" : "var(--text-primary)" }}
+                        >
+                          {track.title}
+                        </span>
+                        <SourceIcon source={track.source} size={11} />
+                      </div>
+                      <div className="truncate text-xs" style={{ color: "var(--text-secondary)" }}>
+                        {track.artist}
+                      </div>
+                    </div>
+                    <span
+                      className="hidden text-xs tabular-nums sm:block"
+                      style={{ color: "var(--text-secondary)" }}
+                    >
+                      {formatTime(track.duration)}
+                    </span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeDownloadedTrack(track.id);
+                      }}
+                      className="p-2 opacity-0 transition-opacity group-hover:opacity-100"
+                      style={{ color: "#ff453a", border: "none", background: "transparent", cursor: "pointer" }}
+                      aria-label="删除下载"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>

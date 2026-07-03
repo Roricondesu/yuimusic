@@ -715,3 +715,88 @@ export const sourceInfo = (
       };
   }
 };
+
+/**
+ * 下载任意来源曲目的音频为 Blob。
+ * - osu!：通过 extractOsuAudio 下载 .osz 并提取音频
+ * - 其他：直接 fetch 音频 URL
+ * @returns Blob 和 MIME 类型
+ */
+export const downloadTrackAudio = async (
+  track: Track,
+  onProgress?: (ratio: number) => void,
+  mirror: "sayobot" | "osu.direct" = "sayobot",
+): Promise<Blob> => {
+  // osu! 谱面：需要下载并解压
+  if (track.source === "osu" && track.osuSetId != null) {
+    const blobUrl = await extractOsuAudio(track.osuSetId, onProgress, mirror);
+    // extractOsuAudio 返回的是 blob: URL，需要取回 Blob
+    const res = await fetch(blobUrl);
+    return res.blob();
+  }
+
+  // 其他来源：直接 fetch 音频流
+  const res = await fetch(track.src);
+  if (!res.ok) throw new Error(`下载失败: ${res.status}`);
+
+  const total = Number(res.headers.get("content-length")) || 0;
+  const reader = res.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  if (reader && total > 0) {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        chunks.push(value);
+        received += value.length;
+        onProgress?.(Math.min(0.99, received / total));
+      }
+    }
+    onProgress?.(1);
+    const blob = new Blob(chunks);
+    // 尝试从 URL 推断 MIME
+    const mime = inferAudioMime(track.src);
+    return mime ? new Blob([blob], { type: mime }) : blob;
+  }
+
+  return res.blob();
+};
+
+/** 从 URL 推断音频 MIME */
+const inferAudioMime = (url: string): string | null => {
+  const u = url.split("?")[0].toLowerCase();
+  if (u.endsWith(".mp3")) return "audio/mpeg";
+  if (u.endsWith(".ogg")) return "audio/ogg";
+  if (u.endsWith(".wav")) return "audio/wav";
+  if (u.endsWith(".m4a")) return "audio/mp4";
+  if (u.endsWith(".flac")) return "audio/flac";
+  return null;
+};
+
+/**
+ * 获取推荐曲目：从多个来源并行搜索，合并结果。
+ * 用于主页"为你推荐"等需要更多曲目的场景。
+ */
+export const fetchRecommendationTracks = async (
+  queries: string[],
+  jamendoClientId?: string,
+  limit = 12,
+): Promise<Track[]> => {
+  const jamendoKey = jamendoClientId?.trim() || JAMENDO_DEFAULT_CLIENT_ID;
+  const results = await Promise.allSettled(
+    queries.map((q) => searchTracks(q, "mixed", limit, jamendoKey)),
+  );
+  const all: Track[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") all.push(...r.value.tracks);
+  }
+  // 简单去重
+  const seen = new Set<string>();
+  return all.filter((t) => {
+    if (seen.has(t.id)) return false;
+    seen.add(t.id);
+    return true;
+  });
+};

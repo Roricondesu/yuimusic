@@ -1,13 +1,15 @@
 /**
  * 基于 IndexedDB 的轻量持久化工具
  *
- * 使用单一数据库 + 单一 object store，以键值对形式存储 JSON 可序列化数据。
- * 适合收藏、歌单、播放历史、设置等中等体积的状态持久化。
+ * 使用单一数据库 + 两个 object store：
+ * - kv：JSON 可序列化数据（收藏、歌单、播放历史、设置、下载元数据）
+ * - blobs：音频 Blob 二进制数据（离线播放用）
  */
 
 const DB_NAME = "yuimusic";
-const DB_VERSION = 1;
-const STORE_NAME = "kv";
+const DB_VERSION = 2;
+const STORE_KV = "kv";
+const STORE_BLOBS = "blobs";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -19,10 +21,14 @@ function openDB(): Promise<IDBDatabase> {
       return;
     }
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
+      if (!db.objectStoreNames.contains(STORE_KV)) {
+        db.createObjectStore(STORE_KV);
+      }
+      // v2: 新增 blobs store 用于存储音频 Blob
+      if (event.oldVersion < 2 && !db.objectStoreNames.contains(STORE_BLOBS)) {
+        db.createObjectStore(STORE_BLOBS);
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -36,8 +42,8 @@ export async function getItem<T>(key: string, fallback: T): Promise<T> {
   try {
     const db = await openDB();
     return await new Promise<T>((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const req = tx.objectStore(STORE_NAME).get(key);
+      const tx = db.transaction(STORE_KV, "readonly");
+      const req = tx.objectStore(STORE_KV).get(key);
       req.onsuccess = () => {
         resolve(req.result === undefined ? fallback : (req.result as T));
       };
@@ -53,8 +59,8 @@ export async function setItem<T>(key: string, value: T): Promise<void> {
   try {
     const db = await openDB();
     await new Promise<void>((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).put(value, key);
+      const tx = db.transaction(STORE_KV, "readwrite");
+      tx.objectStore(STORE_KV).put(value, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
     });
@@ -68,8 +74,57 @@ export async function removeItem(key: string): Promise<void> {
   try {
     const db = await openDB();
     await new Promise<void>((resolve) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      tx.objectStore(STORE_NAME).delete(key);
+      const tx = db.transaction(STORE_KV, "readwrite");
+      tx.objectStore(STORE_KV).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  } catch {
+    /* 静默失败 */
+  }
+}
+
+/* ========== Blob 存储 ========== */
+
+/** 读取音频 Blob，不存在返回 null */
+export async function getBlob(key: string): Promise<Blob | null> {
+  try {
+    const db = await openDB();
+    return await new Promise<Blob | null>((resolve) => {
+      const tx = db.transaction(STORE_BLOBS, "readonly");
+      const req = tx.objectStore(STORE_BLOBS).get(key);
+      req.onsuccess = () => {
+        resolve(req.result === undefined ? null : (req.result as Blob));
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+/** 存储音频 Blob */
+export async function setBlob(key: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_BLOBS, "readwrite");
+      tx.objectStore(STORE_BLOBS).put(blob, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch {
+    throw new Error("Blob 存储失败");
+  }
+}
+
+/** 删除音频 Blob */
+export async function removeBlob(key: string): Promise<void> {
+  try {
+    const db = await openDB();
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction(STORE_BLOBS, "readwrite");
+      tx.objectStore(STORE_BLOBS).delete(key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => resolve();
     });
@@ -85,4 +140,6 @@ export const STORAGE_KEYS = {
   history: "history",
   settings: "settings",
   downloads: "downloads",
+  /** 已下载曲目元数据列表（Track 对象数组，不含 Blob 本身） */
+  downloadedTracks: "downloadedTracks",
 } as const;
