@@ -1136,6 +1136,12 @@ export default function NowPlaying() {
   const renderSourceSwitcher = () => {
     if (alternatives.length === 0) return null;
     const allVariants = [currentTrack, ...alternatives].filter((t): t is Track => !!t);
+    const sourceName: Record<Track["source"], string> = {
+      itunes: "iTunes",
+      audius: "Audius",
+      jamendo: "Jamendo",
+      osu: "osu!",
+    };
     return (
       <div className="relative">
         <button
@@ -1193,7 +1199,7 @@ export default function NowPlaying() {
                       fontWeight: active ? 600 : 400,
                     }}
                   >
-                    {t.preview ? "试听" : "完整"}
+                    {sourceName[t.source]}
                   </span>
                   {active && <Check size={12} style={{ color: "var(--accent)" }} />}
                 </button>
