@@ -95,13 +95,25 @@ export default function Library() {
     setMenuFor(null);
   };
 
-  const previewCount = tracks.filter((t) => t.preview).length;
-  const fullCount = tracks.length - previewCount;
+  // 按来源统计数量
+  const sourceCounts = tracks.reduce<Record<string, number>>((acc, t) => {
+    acc[t.source] = (acc[t.source] || 0) + 1;
+    return acc;
+  }, {});
+  const sourceName: Record<string, string> = {
+    itunes: "iTunes",
+    audius: "Audius",
+    jamendo: "Jamendo",
+    osu: "osu!",
+  };
+  const sourceText = Object.entries(sourceCounts)
+    .map(([src, n]) => `${sourceName[src] || src} ${n}`)
+    .join(" · ");
 
   const countText = loading
     ? "正在搜索…"
     : tracks.length > 0
-      ? `共 ${tracks.length} 首 · 完整 ${fullCount} · 试听 ${previewCount}`
+      ? `共 ${tracks.length} 首${sourceText ? ` · ${sourceText}` : ""}`
       : "搜索 Audius、iTunes、Jamendo 与 osu! 音乐";
 
   return (
