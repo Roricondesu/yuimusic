@@ -992,7 +992,15 @@ const searchSourceWithQueries = async (
  */
 export const searchTracks = async (
   term: string,
-  preferred: "mixed" | "itunes" | "audius" | "jamendo" | "osu" = "mixed",
+  preferred:
+    | "mixed"
+    | "itunes"
+    | "audius"
+    | "jamendo"
+    | "osu"
+    | "bilibili"
+    | "ia"
+    | "deezer" = "mixed",
   limit = 40,
   jamendoClientId?: string,
 ): Promise<SearchResult> => {
@@ -1030,6 +1038,30 @@ export const searchTracks = async (
     if (preferred === "osu") {
       try {
         const t = await searchOsu("pop", limit);
+        return { tracks: t, partial: false };
+      } catch {
+        return { tracks: [], partial: true };
+      }
+    }
+    if (preferred === "bilibili") {
+      try {
+        const t = await searchBilibili("热门音乐", limit);
+        return { tracks: t, partial: false };
+      } catch {
+        return { tracks: [], partial: true };
+      }
+    }
+    if (preferred === "ia") {
+      try {
+        const t = await searchInternetArchive("popular music", limit);
+        return { tracks: t, partial: false };
+      } catch {
+        return { tracks: [], partial: true };
+      }
+    }
+    if (preferred === "deezer") {
+      try {
+        const t = await searchDeezer("top hits", limit);
         return { tracks: t, partial: false };
       } catch {
         return { tracks: [], partial: true };
@@ -1115,6 +1147,42 @@ export const searchTracks = async (
     try {
       // osu! 不扩展 CJK：osu.direct 对日文/罗马音搜索已有较好支持
       const t = await searchOsu(trimmed, limit);
+      return { tracks: t, partial: false };
+    } catch {
+      return { tracks: [], partial: true };
+    }
+  }
+  if (preferred === "bilibili") {
+    try {
+      const t = await searchSourceWithQueries(
+        queries,
+        searchBilibili,
+        Math.max(1, Math.ceil(limit / queries.length)),
+      );
+      return { tracks: t, partial: false };
+    } catch {
+      return { tracks: [], partial: true };
+    }
+  }
+  if (preferred === "ia") {
+    try {
+      const t = await searchSourceWithQueries(
+        queries,
+        searchInternetArchive,
+        Math.max(1, Math.ceil(limit / queries.length)),
+      );
+      return { tracks: t, partial: false };
+    } catch {
+      return { tracks: [], partial: true };
+    }
+  }
+  if (preferred === "deezer") {
+    try {
+      const t = await searchSourceWithQueries(
+        queries,
+        searchDeezer,
+        Math.max(1, Math.ceil(limit / queries.length)),
+      );
       return { tracks: t, partial: false };
     } catch {
       return { tracks: [], partial: true };

@@ -115,7 +115,15 @@ export interface AppSettings {
   showLyrics: boolean;
   sleepTimer: number;
   /** 偏好的音乐来源（混源 / iTunes / Audius / Jamendo / osu!） */
-  preferredSource: "mixed" | "itunes" | "audius" | "jamendo" | "osu";
+  preferredSource:
+    | "mixed"
+    | "itunes"
+    | "audius"
+    | "jamendo"
+    | "osu"
+    | "bilibili"
+    | "ia"
+    | "deezer";
   /** Jamendo API client_id（空则使用默认测试 key，可能被限流/停用） */
   jamendoClientId: string;
   /** 播放速度（0.5 - 2.0） */

@@ -17,6 +17,8 @@ import {
   Upload,
   Trash2,
   Maximize2,
+  Activity,
+  RefreshCw,
 } from "lucide-react";
 import { useAppStore } from "@/store/useAppStore";
 import { GlassButton } from "@/components/glass/GlassButton";
@@ -27,7 +29,12 @@ import {
   clearBackgroundImage,
 } from "@/components/layout/Background";
 import { ACCENTS } from "@/utils/accents";
-import type { AppSettings } from "@/types";
+import type { AppSettings, TrackSource } from "@/types";
+import {
+  pingAllSources,
+  latencyLevel,
+  type SourcePingResult,
+} from "@/utils/sourceHealth";
 import React, { memo, useEffect, useRef, useState } from "react";
 
 type Scheme = "light" | "dark";
@@ -65,11 +72,14 @@ const SOURCE_OPTIONS: {
   label: string;
   desc: string;
 }[] = [
-  { key: "mixed", label: "混源", desc: "Audius + iTunes + Jamendo + osu! 并行，完整优先，中文搜索经 MusicBrainz 别名增强" },
-  { key: "audius", label: "Audius", desc: "完整免费音乐" },
+  { key: "mixed", label: "混源", desc: "7 源并行（Audius/Jamendo/osu!/Bilibili/IA/iTunes/Deezer），完整优先，中文搜索经 MusicBrainz 别名增强" },
+  { key: "audius", label: "Audius", desc: "去中心化完整免费音乐" },
   { key: "jamendo", label: "Jamendo", desc: "独立音乐人 CC 授权完整音乐，需 client_id" },
   { key: "osu", label: "osu!", desc: "从 osu.direct 下载 .osz 并解压提取音频" },
-  { key: "itunes", label: "iTunes", desc: "版权 30 秒试听" },
+  { key: "bilibili", label: "Bilibili", desc: "B 站音频区，ACG/翻唱/独立音乐为主" },
+  { key: "ia", label: "Internet Archive", desc: "公有领域老歌/现场录音/CC 内容" },
+  { key: "deezer", label: "Deezer", desc: "欧洲版权音乐，30 秒试听" },
+  { key: "itunes", label: "iTunes", desc: "主流版权音乐，30 秒试听" },
 ];
 
 const LYRIC_SOURCE_OPTIONS: {
@@ -740,6 +750,141 @@ const SourceSection = memo(function SourceSection({ scheme }: { scheme: Scheme }
   );
 });
 
+// === 来源连接延迟检测 ===
+const ALL_PING_SOURCES: TrackSource[] = [
+  "audius",
+  "jamendo",
+  "osu",
+  "bilibili",
+  "ia",
+  "itunes",
+  "deezer",
+];
+
+const SOURCE_LABEL: Record<TrackSource, string> = {
+  itunes: "iTunes",
+  audius: "Audius",
+  jamendo: "Jamendo",
+  osu: "osu!",
+  bilibili: "Bilibili",
+  ia: "Internet Archive",
+  deezer: "Deezer",
+};
+
+const SourceHealthSection = memo(function SourceHealthSection({ scheme }: { scheme: Scheme }) {
+  const [results, setResults] = useState<Partial<Record<TrackSource, SourcePingResult>>>(
+    () => ({}),
+  );
+  const [testing, setTesting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const runTest = async () => {
+    setTesting(true);
+    setDone(false);
+    setResults({});
+    await pingAllSources(ALL_PING_SOURCES, (r) => {
+      setResults((prev) => ({ ...prev, [r.source]: r }));
+    });
+    setTesting(false);
+    setDone(true);
+  };
+
+  return (
+    <CollapsibleSection icon={<Activity size={18} />} title="来源连接检测" delay={3}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            测量各来源 API 的连接延迟（RTT），判断当前网络下的可用性与速度。
+          </p>
+          <button
+            onClick={runTest}
+            disabled={testing}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors"
+            style={{
+              border: "1px solid var(--accent)",
+              background: "var(--accent-soft)",
+              color: "var(--accent)",
+              cursor: testing ? "wait" : "pointer",
+              opacity: testing ? 0.6 : 1,
+            }}
+            aria-label="开始检测"
+          >
+            <RefreshCw size={13} className={testing ? "animate-spin" : ""} />
+            {testing ? "检测中…" : done ? "重新检测" : "开始检测"}
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          {ALL_PING_SOURCES.map((src) => {
+            const r = results[src];
+            const level = latencyLevel(r?.latency ?? null);
+            return (
+              <div
+                key={src}
+                className="flex items-center justify-between rounded-lg px-3 py-2"
+                style={{ background: "rgba(128,128,128,0.06)" }}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: r ? level.color : "var(--text-secondary)",
+                      opacity: r ? 1 : 0.4,
+                      transition: "background 0.3s",
+                    }}
+                  />
+                  <span className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>
+                    {SOURCE_LABEL[src]}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {testing && !r && (
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      等待…
+                    </span>
+                  )}
+                  {r && (
+                    <>
+                      <span
+                        className="text-xs font-medium"
+                        style={{ color: level.color }}
+                      >
+                        {level.label}
+                      </span>
+                      <span
+                        className="text-xs font-mono"
+                        style={{ color: "var(--text-secondary)", minWidth: 56, textAlign: "right" }}
+                      >
+                        {r.latency != null ? `${r.latency} ms` : r.error || "失败"}
+                      </span>
+                    </>
+                  )}
+                  {!testing && !r && !done && (
+                    <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                      未检测
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {done && (
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            延迟等级：<span style={{ color: "#22c55e" }}>●</span> 优秀 (&lt;500ms) ·
+            <span style={{ color: "#eab308" }}> ●</span> 正常 (&lt;1500ms) ·
+            <span style={{ color: "#f97316" }}> ●</span> 较慢 (≥1500ms) ·
+            <span style={{ color: "#ef4444" }}> ●</span> 不可达
+          </p>
+        )}
+      </div>
+    </CollapsibleSection>
+  );
+});
+
 // === 播放 ===
 const VolumeLimitSlider = memo(function VolumeLimitSlider({ scheme }: { scheme: Scheme }) {
   const value = useAppStore((s) => s.settings.volumeLimit);
@@ -1278,7 +1423,7 @@ const AboutSection = memo(function AboutSection({ scheme }: { scheme: Scheme }) 
       <div className="flex flex-col gap-2 text-sm">
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>版本</span><span style={{ color: "var(--text-primary)" }}>0.2.0</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>玻璃引擎</span><span style={{ color: "var(--text-primary)" }}>@samasante/liquid-glass</span></div>
-        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu!</span></div>
+        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu! · Bilibili · Internet Archive · Deezer</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>元数据增强</span><span style={{ color: "var(--text-primary)" }}>MusicBrainz</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>歌词来源</span><span style={{ color: "var(--text-primary)" }}>LRCLIB · 网易云音乐 · 酷狗音乐</span></div>
       </div>
@@ -1292,6 +1437,9 @@ const AboutSection = memo(function AboutSection({ scheme }: { scheme: Scheme }) 
             { label: "MusicBrainz API", href: "https://musicbrainz.org/doc/MusicBrainz_API" },
             { label: "Jamendo API", href: "https://developer.jamendo.com/v3.0/docs" },
             { label: "osu.direct", href: "https://osu.direct" },
+            { label: "Bilibili", href: "https://www.bilibili.com" },
+            { label: "Internet Archive", href: "https://archive.org" },
+            { label: "Deezer API", href: "https://developers.deezer.com/api" },
             { label: "LRCLIB", href: "https://lrclib.net/" },
           ].map((link) => (
             <a key={link.label} href={link.href} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
@@ -1336,6 +1484,7 @@ export default function Settings() {
         </div>
         <div className="flex flex-col gap-5">
           <SourceSection scheme={scheme} />
+          <SourceHealthSection scheme={scheme} />
           <SleepSection scheme={scheme} />
           <DownloadSection scheme={scheme} />
           <AboutSection scheme={scheme} />
