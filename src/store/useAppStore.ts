@@ -577,7 +577,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const jamendoClientId = get().settings.jamendoClientId;
     set({ library: { ...get().library, tracks: [], loading: true, error: null } });
     try {
-      const { tracks, partial } = await searchTracks(query, source, 24, jamendoClientId);
+      const { tracks, partial } = await searchTracks(query, source, 40, jamendoClientId);
       set({
         library: {
           ...get().library,
@@ -607,7 +607,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     });
     try {
-      const { tracks, partial } = await searchTracks(term || DEFAULT_QUERY, source, 24, jamendoClientId);
+      const { tracks, partial } = await searchTracks(term || DEFAULT_QUERY, source, 40, jamendoClientId);
       set({
         library: {
           ...get().library,

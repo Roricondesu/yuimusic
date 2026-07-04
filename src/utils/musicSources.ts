@@ -79,7 +79,7 @@ const mapItunesToTrack = (item: iTunesResult): Track => ({
   preview: true, // 版权限制：仅 30 秒预览
 });
 
-const searchItunes = async (term: string, limit = 20): Promise<Track[]> => {
+const searchItunes = async (term: string, limit = 40): Promise<Track[]> => {
   if (!term.trim()) return [];
   const url = `https://itunes.apple.com/search?term=${encodeURIComponent(
     term,
@@ -121,7 +121,7 @@ const mapAudiusToTrack = (item: AudiusTrack): Track => ({
   preview: false, // 完整歌曲
 });
 
-const searchAudius = async (term: string, limit = 20): Promise<Track[]> => {
+const searchAudius = async (term: string, limit = 40): Promise<Track[]> => {
   if (!term.trim()) return [];
   const url = `${AUDIUS_HOST}/v1/tracks/search?query=${encodeURIComponent(
     term,
@@ -135,7 +135,7 @@ const searchAudius = async (term: string, limit = 20): Promise<Track[]> => {
 };
 
 /** 获取 Audius 热门（通过 trending 接口） */
-const fetchAudiusTrending = async (limit = 20): Promise<Track[]> => {
+const fetchAudiusTrending = async (limit = 40): Promise<Track[]> => {
   const url = `${AUDIUS_HOST}/v1/tracks/trending?app_name=${APP_NAME}&limit=${limit}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Audius API 错误");
@@ -169,7 +169,7 @@ const mapJamendoToTrack = (item: JamendoResult): Track => ({
 });
 
 const createSearchJamendo = (clientId: string) => {
-  return async (term: string, limit = 20): Promise<Track[]> => {
+  return async (term: string, limit = 40): Promise<Track[]> => {
     if (!term.trim()) return [];
     const url = `${JAMENDO_HOST}/tracks/?client_id=${clientId}&format=json&limit=${limit}&search=${encodeURIComponent(
       term,
@@ -188,7 +188,7 @@ const createSearchJamendo = (clientId: string) => {
 };
 
 const createFetchJamendoTrending = (clientId: string) => {
-  return async (limit = 20): Promise<Track[]> => {
+  return async (limit = 40): Promise<Track[]> => {
     const url = `${JAMENDO_HOST}/tracks/?client_id=${clientId}&format=json&limit=${limit}&order=popularity_total_desc`;
     const res = await fetch(url);
     if (!res.ok) throw new Error("Jamendo API 错误");
@@ -227,7 +227,7 @@ const mapOsuToTrack = (set: OsuBeatmapSet): Track => {
 };
 
 /** osu!：通过 osu.direct 搜索 beatmapset */
-const searchOsu = async (term: string, limit = 8): Promise<Track[]> => {
+const searchOsu = async (term: string, limit = 15): Promise<Track[]> => {
   if (!term.trim()) return [];
   const url = `${OSU_DIRECT_HOST}/search?q=${encodeURIComponent(
     term,
@@ -583,7 +583,7 @@ const searchSourceWithQueries = async (
 export const searchTracks = async (
   term: string,
   preferred: "mixed" | "itunes" | "audius" | "jamendo" | "osu" = "mixed",
-  limit = 20,
+  limit = 40,
   jamendoClientId?: string,
 ): Promise<SearchResult> => {
   const trimmed = term.trim();
@@ -836,7 +836,7 @@ const inferAudioMime = (url: string): string | null => {
 export const fetchRecommendationTracks = async (
   queries: string[],
   jamendoClientId?: string,
-  limit = 12,
+  limit = 20,
 ): Promise<Track[]> => {
   const jamendoKey = jamendoClientId?.trim() || JAMENDO_DEFAULT_CLIENT_ID;
   const results = await Promise.allSettled(
