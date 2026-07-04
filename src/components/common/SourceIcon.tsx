@@ -75,6 +75,20 @@ const OsuGlyph: React.FC<{ size: number }> = ({ size }) => (
   </svg>
 );
 
+/** QQ 音乐 logo（音符 + 圆点，致敬 QQ Music 绿色音符） */
+const QQGlyph: React.FC<{ size: number }> = ({ size }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M9 17.5a2.5 2.5 0 1 1-2.5-2.5A2.5 2.5 0 0 1 9 17.5zM18 6.5a2.5 2.5 0 1 1-2.5-2.5 2.5 2.5 0 0 1 2.5 2.5z" />
+    <path d="M9 17.5V8.2l9-2.2v6.3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 const SOURCE_META: Record<
   TrackSource,
   { title: string; color: string; bg: string }
@@ -99,6 +113,11 @@ const SOURCE_META: Record<
     color: "#ff66ab",
     bg: "rgba(255,102,171,0.15)",
   },
+  qq: {
+    title: "QQ 音乐 · 免费曲库完整歌曲",
+    color: "#31c27c",
+    bg: "rgba(49,194,124,0.15)",
+  },
 };
 
 export const SourceIcon: React.FC<SourceIconProps> = ({
@@ -116,6 +135,8 @@ export const SourceIcon: React.FC<SourceIconProps> = ({
       <JamendoGlyph size={size} />
     ) : source === "osu" ? (
       <OsuGlyph size={size} />
+    ) : source === "qq" ? (
+      <QQGlyph size={size} />
     ) : (
       <AudiusGlyph size={size} />
     );

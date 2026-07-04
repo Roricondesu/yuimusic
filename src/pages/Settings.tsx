@@ -47,10 +47,11 @@ const SOURCE_OPTIONS: {
   label: string;
   desc: string;
 }[] = [
-  { key: "mixed", label: "混源", desc: "Audius + iTunes + Jamendo + osu! 并行，完整优先，中文搜索经 MusicBrainz 别名增强" },
+  { key: "mixed", label: "混源", desc: "Audius + Jamendo + osu! + QQ音乐 + iTunes 5 源并行，完整优先，中文搜索经 MusicBrainz 别名增强" },
   { key: "audius", label: "Audius", desc: "完整免费音乐" },
   { key: "jamendo", label: "Jamendo", desc: "独立音乐人 CC 授权完整音乐，需 client_id" },
   { key: "osu", label: "osu!", desc: "从 osu.direct 下载 .osz 并解压提取音频" },
+  { key: "qq", label: "QQ 音乐", desc: "免费曲库完整歌曲（付费曲自动跳过）" },
   { key: "itunes", label: "iTunes", desc: "版权 30 秒试听" },
 ];
 
@@ -763,7 +764,7 @@ const AboutSection = memo(function AboutSection() {
       <div className="flex flex-col gap-2 text-sm">
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>版本</span><span style={{ color: "var(--text-primary)" }}>0.2.0</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>玻璃引擎</span><span style={{ color: "var(--text-primary)" }}>@samasante/liquid-glass</span></div>
-        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu!</span></div>
+        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu! · QQ音乐</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>元数据增强</span><span style={{ color: "var(--text-primary)" }}>MusicBrainz</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>歌词来源</span><span style={{ color: "var(--text-primary)" }}>LRCLIB · 网易云音乐 · 酷狗音乐</span></div>
       </div>

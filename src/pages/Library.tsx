@@ -14,6 +14,7 @@ const SOURCE_TABS: { key: AppSettings["preferredSource"]; label: string }[] = [
   { key: "audius", label: "Audius" },
   { key: "jamendo", label: "Jamendo" },
   { key: "osu", label: "osu!" },
+  { key: "qq", label: "QQ 音乐" },
   { key: "itunes", label: "iTunes" },
 ];
 

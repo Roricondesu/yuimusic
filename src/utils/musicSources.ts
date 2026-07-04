@@ -261,6 +261,168 @@ const buildOsuDownloadUrl = (
   return `https://osu.direct/api/d/${setId}`;
 };
 
+// === QQ 音乐（逆向） ===
+// 通过 u.y.qq.com/cgi-bin/musicu.fcg 接入：
+// - 搜索：DoSearchForQQMusicDesktop 拿 songmid 列表
+// - 播放 URL：vkey.GetVkeyServer 批量拿 purl（免费曲返回 URL，付费曲返回空 purl）
+// HTTPS 直链可用，无需流式代理。vkey 有效期约 30 分钟。
+// 接口要求 Referer: https://y.qq.com/，由 EdgeOne Edge Function 代理注入。
+// dev 环境通过 vite 代理。
+
+interface QqSinger {
+  name: string;
+  mid?: string;
+}
+
+interface QqAlbum {
+  mid?: string;
+  name?: string;
+  pmid?: string; // 封面 mid，拼接封面 URL 用
+}
+
+interface QqSong {
+  mid: string;
+  id?: number;
+  title: string;
+  singer?: QqSinger[];
+  album?: QqAlbum;
+  interval?: number; // 秒
+}
+
+interface QqSearchResp {
+  code: number;
+  req_0?: {
+    code: number;
+    data?: { body?: { song?: { list: QqSong[] } } };
+  };
+}
+
+interface QqVkeyInfo {
+  purl: string;
+  filename: string;
+}
+
+interface QqVkeyResp {
+  code: number;
+  req_0?: {
+    code: number;
+    data?: {
+      sip?: string[]; // ['http://...', 'https://...']
+      midurlinfo?: QqVkeyInfo[];
+    };
+  };
+}
+
+const QQ_PROXY = "/api/proxy/qq/cgi-bin/musicu.fcg";
+const QQ_GUID = "552068528"; // 固定 guid 即可，QQ 不校验
+
+/** 调用 musicu.fcg（POST + JSON），5 秒超时 */
+const callQqMusicu = async <T>(payload: unknown): Promise<T> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(QQ_PROXY, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`QQ API HTTP ${res.status}`);
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+/** QQ 搜索 → songmid 列表 */
+const searchQqSongs = async (term: string, limit: number): Promise<QqSong[]> => {
+  if (!term.trim()) return [];
+  const resp = await callQqMusicu<QqSearchResp>({
+    req_0: {
+      module: "music.search.SearchCgiService",
+      method: "DoSearchForQQMusicDesktop",
+      param: {
+        query: term,
+        search_type: 0,
+        num_per_page: limit,
+        page_num: 1,
+      },
+    },
+    comm: { uin: 0, format: "json", ct: 20, cv: 0 },
+  });
+  return resp.req_0?.data?.body?.song?.list || [];
+};
+
+/** 批量获取 vkey（单次最多 50 个 mid），过滤付费返回空 purl 的 */
+const fetchQqVkeys = async (songmids: string[]): Promise<Map<string, string>> => {
+  const result = new Map<string, string>();
+  if (!songmids.length) return result;
+  const resp = await callQqMusicu<QqVkeyResp>({
+    req_0: {
+      module: "vkey.GetVkeyServer",
+      method: "CgiGetVkey",
+      param: {
+        guid: QQ_GUID,
+        songmid: songmids,
+        songtype: songmids.map(() => 0),
+        uin: "0",
+        loginflag: 1,
+        platform: "20",
+      },
+    },
+    comm: { uin: 0, format: "json", ct: 20, cv: 0 },
+  });
+  const sip = resp.req_0?.data?.sip || [];
+  // 优先用 https 的 sip（避免 mixed content）
+  const httpsSip = sip.find((s) => s.startsWith("https://")) || sip[0] || "";
+  const info = resp.req_0?.data?.midurlinfo || [];
+  info.forEach((m, i) => {
+    if (m.purl && httpsSip) {
+      result.set(songmids[i], httpsSip + m.purl);
+    }
+  });
+  return result;
+};
+
+const mapQqToTrack = (song: QqSong, src: string): Track => ({
+  id: `qq-${song.mid}`,
+  title: song.title,
+  artist: song.singer?.map((s) => s.name).join(" / ") || "QQ 音乐",
+  album: song.album?.name || "QQ 音乐",
+  cover: song.album?.pmid
+    ? `https://y.gtimg.cn/music/photo_new/T002R300x300M000${song.album.pmid}.jpg`
+    : "",
+  duration: song.interval || 0,
+  src,
+  source: "qq",
+  preview: false, // 完整歌曲（仅免费曲库；付费曲已过滤）
+});
+
+/**
+ * QQ 音乐搜索：搜索 → 批量取 vkey → 仅保留能拿到 URL 的（免费曲）
+ * vkey 有效期约 30 分钟，过期后播放会失败，调用方需重新搜索。
+ */
+const searchQQ = async (term: string, limit = 20): Promise<Track[]> => {
+  if (!term.trim()) return [];
+  try {
+    const songs = await searchQqSongs(term, limit);
+    if (!songs.length) return [];
+    const mids = songs.map((s) => s.mid);
+    const vkeyMap = await fetchQqVkeys(mids);
+    // 只保留能拿到 URL 的（免费曲）；付费曲自动跳过
+    return songs
+      .filter((s) => vkeyMap.has(s.mid))
+      .map((s) => mapQqToTrack(s, vkeyMap.get(s.mid)!));
+  } catch {
+    return [];
+  }
+};
+
+/** QQ 音乐热门：搜索 "热门" 关键词 */
+const fetchQqHot = async (limit = 20): Promise<Track[]> => {
+  return searchQQ("华语流行 热门", limit);
+};
+
 /** 根据文件扩展名获取音频 MIME type */
 const getAudioMime = (filename: string): string => {
   const ext = filename.toLowerCase().split(".").pop() || "";
@@ -420,6 +582,7 @@ export interface ChartSection {
  * - Jamendo：按 popularity 排序
  * - osu!：搜索 "popular" 获取热门谱面
  * - iTunes：搜索 "top hits" 获取热门歌曲
+ * - QQ 音乐：搜索 "华语流行 热门" 获取免费曲库
  */
 export const fetchCharts = async (
   jamendoClientId?: string,
@@ -427,11 +590,12 @@ export const fetchCharts = async (
   const jamendoKey = jamendoClientId?.trim() || JAMENDO_DEFAULT_CLIENT_ID;
   const fetchJamendoTrending = createFetchJamendoTrending(jamendoKey);
 
-  const [audius, jamendo, osu, itunes] = await Promise.allSettled([
+  const [audius, jamendo, osu, itunes, qq] = await Promise.allSettled([
     fetchAudiusTrending(20),
     fetchJamendoTrending(20),
     searchOsu("popular", 20),
     searchItunes("top hits", 20),
+    fetchQqHot(20),
   ]);
 
   const sections: ChartSection[] = [];
@@ -461,6 +625,13 @@ export const fetchCharts = async (
       title: "iTunes 热门歌曲",
       source: "itunes",
       tracks: itunes.value,
+    });
+  }
+  if (qq.status === "fulfilled" && qq.value.length) {
+    sections.push({
+      title: "QQ 音乐 免费曲库",
+      source: "qq",
+      tracks: qq.value,
     });
   }
 
@@ -530,7 +701,13 @@ const searchSourceWithQueries = async (
  */
 export const searchTracks = async (
   term: string,
-  preferred: "mixed" | "itunes" | "audius" | "jamendo" | "osu" = "mixed",
+  preferred:
+    | "mixed"
+    | "itunes"
+    | "audius"
+    | "jamendo"
+    | "osu"
+    | "qq" = "mixed",
   limit = 20,
   jamendoClientId?: string,
 ): Promise<SearchResult> => {
@@ -573,17 +750,27 @@ export const searchTracks = async (
         return { tracks: [], partial: true };
       }
     }
-    // mixed：Audius / Jamendo / osu! 三源轮询穿插，iTunes 试听放最后
-    const [audius, jamendo, osu, itunes] = await Promise.allSettled([
-      fetchAudiusTrending(Math.ceil(limit / 4)),
-      fetchJamendoTrending(Math.floor(limit / 4)),
-      searchOsu("pop", Math.floor(limit / 4)),
-      searchItunes("pop", Math.floor(limit / 4)),
+    if (preferred === "qq") {
+      try {
+        const t = await fetchQqHot(limit);
+        return { tracks: t, partial: false };
+      } catch {
+        return { tracks: [], partial: true };
+      }
+    }
+    // mixed：Audius / Jamendo / osu! / QQ 完整源轮询穿插，iTunes 试听放最后
+    const [audius, jamendo, osu, qq, itunes] = await Promise.allSettled([
+      fetchAudiusTrending(Math.ceil(limit / 5)),
+      fetchJamendoTrending(Math.floor(limit / 5)),
+      searchOsu("pop", Math.floor(limit / 5)),
+      fetchQqHot(Math.floor(limit / 5)),
+      searchItunes("pop", Math.floor(limit / 5)),
     ]);
     const interleaved = interleaveByRelevance([
       audius.status === "fulfilled" ? audius.value : [],
       jamendo.status === "fulfilled" ? jamendo.value : [],
       osu.status === "fulfilled" ? osu.value : [],
+      qq.status === "fulfilled" ? qq.value : [],
     ]);
     const tracks = [
       ...interleaved,
@@ -595,6 +782,7 @@ export const searchTracks = async (
         audius.status === "rejected" ||
         jamendo.status === "rejected" ||
         osu.status === "rejected" ||
+        qq.status === "rejected" ||
         itunes.status === "rejected",
     };
   }
@@ -648,23 +836,34 @@ export const searchTracks = async (
       return { tracks: [], partial: true };
     }
   }
+  if (preferred === "qq") {
+    try {
+      // QQ 音乐原生支持中文搜索，不需 CJK 扩展
+      const t = await searchQQ(trimmed, limit);
+      return { tracks: t, partial: false };
+    } catch {
+      return { tracks: [], partial: true };
+    }
+  }
 
-  // mixed：Audius / Jamendo / osu! 三源轮询穿插，iTunes 试听放最后
-  const perSourceLimit = Math.ceil(limit / 4);
+  // mixed：Audius / Jamendo / osu! / QQ 完整源轮询穿插，iTunes 试听放最后
+  const perSourceLimit = Math.ceil(limit / 5);
   const perQueryLimit = Math.max(
     1,
     Math.ceil(perSourceLimit / queries.length),
   );
-  const [audius, jamendo, osu, itunes] = await Promise.allSettled([
+  const [audius, jamendo, osu, qq, itunes] = await Promise.allSettled([
     searchSourceWithQueries(queries, searchAudius, perQueryLimit),
     searchSourceWithQueries(queries, searchJamendo, perQueryLimit),
     searchOsu(trimmed, perSourceLimit),
+    searchQQ(trimmed, perSourceLimit),
     searchSourceWithQueries(queries, searchItunes, perQueryLimit),
   ]);
   const interleaved = interleaveByRelevance([
     audius.status === "fulfilled" ? audius.value : [],
     jamendo.status === "fulfilled" ? jamendo.value : [],
     osu.status === "fulfilled" ? osu.value : [],
+    qq.status === "fulfilled" ? qq.value : [],
   ]);
   const tracks = [
     ...interleaved,
@@ -676,6 +875,7 @@ export const searchTracks = async (
       audius.status === "rejected" ||
       jamendo.status === "rejected" ||
       osu.status === "rejected" ||
+      qq.status === "rejected" ||
       itunes.status === "rejected",
   };
 };
@@ -712,6 +912,13 @@ export const sourceInfo = (
         short: "谱面",
         copyright: false,
         full: false,
+      };
+    case "qq":
+      return {
+        label: "QQ 音乐 · 免费曲库完整歌曲",
+        short: "QQ",
+        copyright: false,
+        full: true,
       };
   }
 };

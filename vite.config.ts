@@ -31,11 +31,21 @@ const neteaseProxyPlugin = (): Plugin => ({
             if (value) headers[h] = Array.isArray(value) ? value[0] : value;
           }
 
+          // 读取请求 body（POST/PUT 场景）。Node 18+ fetch 不接受 IncomingMessage，
+          // 必须先 buffer 成 Buffer/String 再传
+          let reqBody: Buffer | undefined;
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) {
+              chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+            }
+            if (chunks.length) reqBody = Buffer.concat(chunks);
+          }
+
           const response = await fetch(targetUrl, {
             method: req.method,
             headers,
-            // @ts-expect-error Node 18+ fetch supports body on RequestInit
-            body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined,
+            body: reqBody,
           });
 
           res.statusCode = response.status;
@@ -58,6 +68,8 @@ const neteaseProxyPlugin = (): Plugin => ({
     proxyApi('/netease-api', 'https://music.163.com', 'https://music.163.com/');
     proxyApi('/kugou-api', 'http://lyrics.kugou.com');
     proxyApi('/kugou-search', 'http://mobilecdn.kugou.com');
+    // QQ 音乐 musicu.fcg 接口（POST，需要伪造 Referer）
+    proxyApi('/api/proxy/qq', 'https://u.y.qq.com', 'https://y.qq.com/');
   },
 });
 
