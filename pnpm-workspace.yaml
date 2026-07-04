@@ -1,3 +1,10 @@
-# pnpm 10+ 配置：允许 esbuild 执行 postinstall（解压平台二进制）
+# pnpm 构建脚本白名单
+# 同时声明两种格式以兼容 pnpm 10（本地）和 pnpm 11（EdgeOne Makers）：
+# - pnpm 10 读取 onlyBuiltDependencies（allowBuilds 被忽略）
+# - pnpm 11 读取 allowBuilds（onlyBuiltDependencies 已移除，被忽略）
+# esbuild 需要执行 postinstall 解压平台二进制
 onlyBuiltDependencies:
   - esbuild
+
+allowBuilds:
+  esbuild: true
