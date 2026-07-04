@@ -59,6 +59,8 @@ const neteaseProxyPlugin = (): Plugin => ({
     proxyApi('/kugou-search', 'http://mobilecdn.kugou.com');
     // Internet Archive API（搜索 + 元数据）
     proxyApi('/api/proxy/ia', 'https://archive.org');
+    // Deezer API（CORS 代理）
+    proxyApi('/api/proxy/deezer', 'https://api.deezer.com');
   },
 });
 

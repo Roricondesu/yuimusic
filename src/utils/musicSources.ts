@@ -441,6 +441,22 @@ interface IaMetadataResp {
 }
 
 const IA_PROXY = "/api/proxy/ia";
+const DEEZER_PROXY = "/api/proxy/deezer";
+
+/**
+ * 给任意 Promise 套一个超时保护：超时后 reject，避免慢源拖垮整体搜索。
+ * mixed 模式下每个源都包一层 withTimeout，确保 4.5 秒内必出结果。
+ */
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("source timeout")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+};
+
+/** mixed 模式下每个源的最大等待时间（毫秒） */
+const MIXED_SOURCE_TIMEOUT = 4500;
 
 const parseIaDuration = (length?: string): number => {
   if (!length) return 0;
@@ -490,7 +506,7 @@ const buildIaTrackFromMetadata = async (
   hintArtist?: string,
 ): Promise<Track | null> => {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 4000);
+  const timer = setTimeout(() => controller.abort(), 2500);
   const url = `${IA_PROXY}/metadata/${identifier}`;
   try {
     const res = await fetch(url, { signal: controller.signal });
@@ -533,7 +549,7 @@ const searchInternetArchive = async (
     q,
   )}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=date&fl[]=downloads&rows=${limit}&page=1&output=json`;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), 3000);
   try {
     const res = await fetch(url, { signal: controller.signal });
     if (!res.ok) return [];
@@ -541,24 +557,24 @@ const searchInternetArchive = async (
     const docs = data.response?.docs || [];
     if (!docs.length) return [];
 
-    // 并发拉取每个 identifier 的元数据（最多 8 路并发避免过载）
-    const concurrency = 8;
+    // 限制元数据拉取数量：N+1 模式下每个 identifier 都要单独请求元数据，
+    // 过多会导致总耗时过长。最多取 5 条，够 mixed 模式穿插使用。
+    const maxFetches = Math.min(docs.length, 5);
+    const toFetch = docs.slice(0, maxFetches);
+
+    // 单批并发拉取，整体不超过 4 秒（含搜索已用时间）
     const results: Track[] = [];
-    for (let i = 0; i < docs.length; i += concurrency) {
-      const batch = docs.slice(i, i + concurrency);
-      const tracks = await Promise.all(
-        batch.map((d) =>
-          buildIaTrackFromMetadata(
-            d.identifier,
-            d.title,
-            Array.isArray(d.creator) ? d.creator[0] : d.creator,
-          ).catch(() => null),
-        ),
-      );
-      for (const t of tracks) {
-        if (t) results.push(t);
-      }
-      if (results.length >= limit) break;
+    const tracks = await Promise.all(
+      toFetch.map((d) =>
+        buildIaTrackFromMetadata(
+          d.identifier,
+          d.title,
+          Array.isArray(d.creator) ? d.creator[0] : d.creator,
+        ).catch(() => null),
+      ),
+    );
+    for (const t of tracks) {
+      if (t) results.push(t);
     }
     return results.slice(0, limit);
   } catch {
@@ -570,7 +586,7 @@ const searchInternetArchive = async (
 
 // === Deezer ===
 // 30 秒版权试听（与 iTunes 同类），曲库覆盖欧洲/法语圈音乐更广
-// API 支持 CORS，无需代理。免费 API 有 QPS 限制。
+// Deezer API 不返回 CORS 头，浏览器直连会被拦截，必须走 /api/proxy/deezer 代理。
 
 interface DeezerTrack {
   id: number;
@@ -600,13 +616,12 @@ const mapDeezerToTrack = (item: DeezerTrack): Track => ({
 
 const searchDeezer = async (term: string, limit = 25): Promise<Track[]> => {
   if (!term.trim()) return [];
-  // Deezer API 支持 CORS，但有 50 req/5s 的 QPS 限制
-  // 失败则返回空数组，mixed 模式下其他源兜底
+  // Deezer API 不支持 CORS，走代理。失败则返回空数组，mixed 模式下其他源兜底
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await fetch(
-      `https://api.deezer.com/search?q=${encodeURIComponent(term)}&limit=${limit}`,
+      `${DEEZER_PROXY}/search?q=${encodeURIComponent(term)}&limit=${limit}`,
       { signal: controller.signal },
     );
     if (!res.ok) return [];
@@ -651,12 +666,12 @@ export const fetchCharts = async (
   const fetchJamendoTrending = createFetchJamendoTrending(jamendoKey);
 
   const [audius, jamendo, osu, itunes, ia, deezer] = await Promise.allSettled([
-    fetchAudiusTrending(20),
-    fetchJamendoTrending(20),
-    searchOsu("popular", 20),
-    searchItunes("top hits", 20),
-    searchInternetArchive("popular music", 15),
-    searchDeezer("top hits", 20),
+    withTimeout(fetchAudiusTrending(20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(fetchJamendoTrending(20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchOsu("popular", 20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchItunes("top hits", 20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchInternetArchive("popular music", 15), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchDeezer("top hits", 20), MIXED_SOURCE_TIMEOUT),
   ]);
 
   const sections: ChartSection[] = [];
@@ -734,12 +749,12 @@ export const fetchChartsByLanguage = async (
   const query = LANGUAGE_QUERIES[language];
 
   const [audius, jamendo, osu, itunes, ia, deezer] = await Promise.allSettled([
-    searchAudius(query, 20),
-    searchJamendo(query, 20),
-    searchOsu(query, 15),
-    searchItunes(query, 20),
-    searchInternetArchive(query, 15),
-    searchDeezer(query, 20),
+    withTimeout(searchAudius(query, 20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchJamendo(query, 20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchOsu(query, 15), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchItunes(query, 20), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchInternetArchive(query, 15), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchDeezer(query, 20), MIXED_SOURCE_TIMEOUT),
   ]);
 
   const langLabel: Record<Exclude<ChartLanguage, "all">, string> = {
@@ -956,14 +971,15 @@ export const searchTracks = async (
       }
     }
     // mixed：完整源轮询穿插，试听源放最后
+    // 每个源套 withTimeout，防止慢源拖垮整体搜索
     const perSource = Math.ceil(limit / 6);
     const [audius, jamendo, osu, ia, itunes, deezer] = await Promise.allSettled([
-      fetchAudiusTrending(perSource),
-      fetchJamendoTrending(perSource),
-      searchOsu("pop", perSource),
-      searchInternetArchive("popular music", Math.floor(perSource / 2)),
-      searchItunes("pop", perSource),
-      searchDeezer("top hits", perSource),
+      withTimeout(fetchAudiusTrending(perSource), MIXED_SOURCE_TIMEOUT),
+      withTimeout(fetchJamendoTrending(perSource), MIXED_SOURCE_TIMEOUT),
+      withTimeout(searchOsu("pop", perSource), MIXED_SOURCE_TIMEOUT),
+      withTimeout(searchInternetArchive("popular music", Math.floor(perSource / 2)), MIXED_SOURCE_TIMEOUT),
+      withTimeout(searchItunes("pop", perSource), MIXED_SOURCE_TIMEOUT),
+      withTimeout(searchDeezer("top hits", perSource), MIXED_SOURCE_TIMEOUT),
     ]);
     const interleaved = interleaveByRelevance([
       audius.status === "fulfilled" ? audius.value : [],
@@ -1063,18 +1079,19 @@ export const searchTracks = async (
   }
 
   // mixed：完整源轮询穿插（Audius/Jamendo/osu!/IA），试听源（iTunes/Deezer）放最后
+  // 每个源套 withTimeout，防止慢源拖垮整体搜索
   const perSourceLimit = Math.ceil(limit / 6);
   const perQueryLimit = Math.max(
     1,
     Math.ceil(perSourceLimit / queries.length),
   );
   const [audius, jamendo, osu, ia, itunes, deezer] = await Promise.allSettled([
-    searchSourceWithQueries(queries, searchAudius, perQueryLimit),
-    searchSourceWithQueries(queries, searchJamendo, perQueryLimit),
-    searchOsu(trimmed, perSourceLimit),
-    searchSourceWithQueries(queries, searchInternetArchive, Math.max(1, Math.floor(perQueryLimit / 2))),
-    searchSourceWithQueries(queries, searchItunes, perQueryLimit),
-    searchSourceWithQueries(queries, searchDeezer, perQueryLimit),
+    withTimeout(searchSourceWithQueries(queries, searchAudius, perQueryLimit), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchSourceWithQueries(queries, searchJamendo, perQueryLimit), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchOsu(trimmed, perSourceLimit), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchSourceWithQueries(queries, searchInternetArchive, Math.max(1, Math.floor(perQueryLimit / 2))), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchSourceWithQueries(queries, searchItunes, perQueryLimit), MIXED_SOURCE_TIMEOUT),
+    withTimeout(searchSourceWithQueries(queries, searchDeezer, perQueryLimit), MIXED_SOURCE_TIMEOUT),
   ]);
   const interleaved = interleaveByRelevance([
     audius.status === "fulfilled" ? audius.value : [],

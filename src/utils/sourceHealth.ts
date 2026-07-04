@@ -51,7 +51,7 @@ const buildPingUrl = (source: TrackSource): { url: string; init?: RequestInit } 
     case "ia":
       return { url: "/api/proxy/ia/advancedsearch.php?q=collection:audio%20AND%20mediatype:audio&rows=1&output=json" };
     case "deezer":
-      return { url: "https://api.deezer.com/search?q=test&limit=1" };
+      return { url: "/api/proxy/deezer/search?q=test&limit=1" };
   }
 };
 
