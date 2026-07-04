@@ -1,6 +1,6 @@
-packages:
-  - .
+# pnpm 10+ 配置：build scripts 白名单/忽略列表
+# 纯 Web 部署不需要 electron 的 postinstall（下载二进制），显式忽略避免 ERR_PNPM_IGNORED_BUILDS
 onlyBuiltDependencies:
   - esbuild
-allowBuilds:
-  esbuild: true
+ignoredBuiltDependencies:
+  - electron
