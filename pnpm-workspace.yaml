@@ -1,3 +1,9 @@
-# pnpm 10+ 配置：允许 esbuild 执行 postinstall（解压平台二进制）
+# pnpm 10+ 配置
+# - esbuild 需要执行 postinstall 解压平台二进制
+# - overrides：把 electron-to-chromium 钉到 1.5.385（2026-07-02 发布），
+#   规避 EdgeOne Makers 的 minimumReleaseAge（24h）策略检查
 onlyBuiltDependencies:
   - esbuild
+
+overrides:
+  electron-to-chromium: 1.5.385
