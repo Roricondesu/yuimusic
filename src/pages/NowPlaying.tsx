@@ -1141,6 +1141,9 @@ export default function NowPlaying() {
       audius: "Audius",
       jamendo: "Jamendo",
       osu: "osu!",
+      bilibili: "Bilibili",
+      ia: "Internet Archive",
+      deezer: "Deezer",
     };
     return (
       <div className="relative">

@@ -1,6 +1,13 @@
 export type RepeatMode = "off" | "all" | "one";
 
-export type TrackSource = "itunes" | "audius" | "jamendo" | "osu";
+export type TrackSource =
+  | "itunes"
+  | "audius"
+  | "jamendo"
+  | "osu"
+  | "bilibili"
+  | "ia"
+  | "deezer";
 
 export interface Track {
   id: string;
@@ -17,6 +24,10 @@ export interface Track {
   osuSetId?: number;
   /** osu! 下载镜像：sayobot（国内快）| osu.direct */
   osuMirror?: "sayobot" | "osu.direct";
+  /** Bilibili 音频区 au_id，用于按需解析流地址 */
+  bilibiliAuId?: number;
+  /** Bilibili 视频 bvid（兜底用） */
+  bilibiliBvid?: string;
   /**
    * 同曲目不同来源的备选版本（名字+歌手相同视为同曲目）。
    * 主 Track 是首选来源，alternatives 是其他来源的可切换版本。

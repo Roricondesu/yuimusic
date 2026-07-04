@@ -105,6 +105,9 @@ export default function Library() {
     audius: "Audius",
     jamendo: "Jamendo",
     osu: "osu!",
+    bilibili: "Bilibili",
+    ia: "Internet Archive",
+    deezer: "Deezer",
   };
   const sourceText = Object.entries(sourceCounts)
     .map(([src, n]) => `${sourceName[src] || src} ${n}`)

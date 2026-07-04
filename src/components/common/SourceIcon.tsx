@@ -7,6 +7,9 @@ import type { TrackSource } from "../../types";
  * - Audius：Audius 波形 logo
  * - Jamendo：音乐音符（独立/CC 授权音乐）
  * - osu!：osu 圆圈徽标
+ * - Bilibili：B 站电视机 logo
+ * - Internet Archive：IA 圆顶建筑 logo
+ * - Deezer：Deezer 波形 logo
  * 用 SVG 绘制，替代文字徽章。
  */
 
@@ -75,6 +78,60 @@ const OsuGlyph: React.FC<{ size: number }> = ({ size }) => (
   </svg>
 );
 
+/** Bilibili 电视机 logo（简化） */
+const BilibiliGlyph: React.FC<{ size: number }> = ({ size }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <path d="M17 3l-3 3h-4L7 3 5.6 4.4 7.2 6H5a3 3 0 00-3 3v9a3 3 0 003 3h14a3 3 0 003-3V9a3 3 0 00-3-3h-2.2l1.6-1.6L17 3zm-8 8a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4zm6 0a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z" />
+  </svg>
+);
+
+/** Internet Archive 圆顶建筑 logo（简化） */
+const IaGlyph: React.FC<{ size: number }> = ({ size }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    aria-hidden="true"
+  >
+    {/* 屋顶三角 */}
+    <path d="M3 10l9-6 9 6" strokeLinecap="round" strokeLinejoin="round" />
+    {/* 主体 */}
+    <path d="M5 10v9h14v-9" strokeLinecap="round" strokeLinejoin="round" />
+    {/* 立柱 */}
+    <path d="M9 10v9M15 10v9" strokeLinecap="round" />
+  </svg>
+);
+
+/** Deezer 波形 logo（简化为条形） */
+const DeezerGlyph: React.FC<{ size: number }> = ({ size }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    aria-hidden="true"
+  >
+    <rect x="3" y="6" width="3" height="3" rx="0.5" />
+    <rect x="8" y="6" width="3" height="3" rx="0.5" />
+    <rect x="13" y="6" width="3" height="3" rx="0.5" />
+    <rect x="18" y="6" width="3" height="3" rx="0.5" />
+    <rect x="6" y="11" width="3" height="3" rx="0.5" />
+    <rect x="11" y="11" width="3" height="3" rx="0.5" />
+    <rect x="16" y="11" width="3" height="3" rx="0.5" />
+    <rect x="9" y="16" width="3" height="3" rx="0.5" />
+    <rect x="14" y="16" width="3" height="3" rx="0.5" />
+  </svg>
+);
+
 const SOURCE_META: Record<
   TrackSource,
   { title: string; color: string; bg: string }
@@ -99,6 +156,21 @@ const SOURCE_META: Record<
     color: "#ff66ab",
     bg: "rgba(255,102,171,0.15)",
   },
+  bilibili: {
+    title: "Bilibili · 音频区完整内容",
+    color: "#fb7299",
+    bg: "rgba(251,114,153,0.15)",
+  },
+  ia: {
+    title: "Internet Archive · 公有领域",
+    color: "#60a5fa",
+    bg: "rgba(96,165,250,0.15)",
+  },
+  deezer: {
+    title: "Deezer · 版权试听 30 秒",
+    color: "#a78bfa",
+    bg: "rgba(167,139,250,0.15)",
+  },
 };
 
 export const SourceIcon: React.FC<SourceIconProps> = ({
@@ -116,6 +188,12 @@ export const SourceIcon: React.FC<SourceIconProps> = ({
       <JamendoGlyph size={size} />
     ) : source === "osu" ? (
       <OsuGlyph size={size} />
+    ) : source === "bilibili" ? (
+      <BilibiliGlyph size={size} />
+    ) : source === "ia" ? (
+      <IaGlyph size={size} />
+    ) : source === "deezer" ? (
+      <DeezerGlyph size={size} />
     ) : (
       <AudiusGlyph size={size} />
     );
