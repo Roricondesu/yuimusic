@@ -467,6 +467,66 @@ export const fetchCharts = async (
   return sections;
 };
 
+/** 榜单语言/地区分类 */
+export type ChartLanguage = "all" | "cjk" | "western" | "japanese" | "korean" | "electronic";
+
+/** 各语言/地区对应的搜索关键词（用于非 trending 来源） */
+const LANGUAGE_QUERIES: Record<Exclude<ChartLanguage, "all">, string> = {
+  cjk: "华语流行", // 中文
+  western: "pop hits", // 欧美
+  japanese: "J-pop", // 日语
+  korean: "K-pop", // 韩语
+  electronic: "EDM electronic", // 电子
+};
+
+/**
+ * 获取按语言/地区筛选的榜单。
+ * - all：复用 fetchCharts（各源 trending）
+ * - 其他：用对应语言关键词并行搜索各源，合并为分区
+ */
+export const fetchChartsByLanguage = async (
+  language: ChartLanguage,
+  jamendoClientId?: string,
+): Promise<ChartSection[]> => {
+  if (language === "all") return fetchCharts(jamendoClientId);
+
+  const jamendoKey = jamendoClientId?.trim() || JAMENDO_DEFAULT_CLIENT_ID;
+  const searchJamendo = createSearchJamendo(jamendoKey);
+  const query = LANGUAGE_QUERIES[language];
+
+  const [audius, jamendo, osu, itunes] = await Promise.allSettled([
+    searchAudius(query, 20),
+    searchJamendo(query, 20),
+    searchOsu(query, 15),
+    searchItunes(query, 20),
+  ]);
+
+  const langLabel: Record<Exclude<ChartLanguage, "all">, string> = {
+    cjk: "华语",
+    western: "欧美",
+    japanese: "日语",
+    korean: "韩语",
+    electronic: "电子",
+  };
+  const label = langLabel[language];
+
+  const sections: ChartSection[] = [];
+  if (audius.status === "fulfilled" && audius.value.length) {
+    sections.push({ title: `Audius · ${label}`, source: "audius", tracks: audius.value });
+  }
+  if (jamendo.status === "fulfilled" && jamendo.value.length) {
+    sections.push({ title: `Jamendo · ${label}`, source: "jamendo", tracks: jamendo.value });
+  }
+  if (osu.status === "fulfilled" && osu.value.length) {
+    sections.push({ title: `osu! · ${label}`, source: "osu", tracks: osu.value });
+  }
+  if (itunes.status === "fulfilled" && itunes.value.length) {
+    sections.push({ title: `iTunes · ${label}`, source: "itunes", tracks: itunes.value });
+  }
+
+  return sections;
+};
+
 /**
  * 轮询合并多个来源的曲目，使各源结果按相关度穿插。
  * 每个源内部已按 API 返回的相关度排序，轮询取各源第 1、2、3… 项，
@@ -517,7 +577,7 @@ const normalizeTrackKey = (artist: string, title: string): string => {
  * 将搜索结果按 artist+title 合并：同曲目不同来源归为主 Track 的 alternatives。
  * 保留首选来源（完整版权优先于试听）作为主版本，其余作为备选。
  */
-const mergeSameTracks = (tracks: Track[]): Track[] => {
+export const mergeSameTracks = (tracks: Track[]): Track[] => {
   const map = new Map<string, Track>();
   for (const t of tracks) {
     const key = normalizeTrackKey(t.artist, t.title);

@@ -7,6 +7,7 @@ import {
   ListMusic,
   TrendingUp,
   Download,
+  Mic2,
 } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
 import { GlassCard } from "../glass/GlassCard";
@@ -16,6 +17,7 @@ const NAV: { key: TabKey; icon: React.ReactNode }[] = [
   { key: "home", icon: <Home size={20} /> },
   { key: "library", icon: <Library size={20} /> },
   { key: "charts", icon: <TrendingUp size={20} /> },
+  { key: "artists", icon: <Mic2 size={20} /> },
   { key: "downloads", icon: <Download size={20} /> },
   { key: "favorites", icon: <Heart size={20} /> },
   { key: "playlists", icon: <ListMusic size={20} /> },
@@ -34,6 +36,7 @@ export const TopNav: React.FC = () => {
     home: null,
     library: null,
     charts: null,
+    artists: null,
     downloads: null,
     favorites: null,
     playlists: null,

@@ -11,7 +11,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { SourceIcon } from "@/components/common/SourceIcon";
 import { CoverImage } from "@/components/common/CoverImage";
 import { formatTime } from "@/utils/formatTime";
-import { fetchCharts, type ChartSection } from "@/utils/musicSources";
+import { fetchChartsByLanguage, type ChartSection, type ChartLanguage } from "@/utils/musicSources";
 import type { Track } from "@/types";
 
 /** 前三名排名样式 */
@@ -216,19 +216,29 @@ function ChartSectionView({
 export default function Charts() {
   const [sections, setSections] = useState<ChartSection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [language, setLanguage] = useState<ChartLanguage>("all");
   const jamendoClientId = useAppStore((s) => s.settings.jamendoClientId);
+
+  const LANG_OPTIONS: { key: ChartLanguage; label: string }[] = [
+    { key: "all", label: "全部" },
+    { key: "cjk", label: "华语" },
+    { key: "western", label: "欧美" },
+    { key: "japanese", label: "日语" },
+    { key: "korean", label: "韩语" },
+    { key: "electronic", label: "电子" },
+  ];
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchCharts(jamendoClientId);
+      const data = await fetchChartsByLanguage(language, jamendoClientId);
       setSections(data);
     } catch {
       setSections([]);
     } finally {
       setLoading(false);
     }
-  }, [jamendoClientId]);
+  }, [jamendoClientId, language]);
 
   useEffect(() => {
     load();
@@ -269,7 +279,7 @@ export default function Charts() {
               音乐榜单
             </h1>
             <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-              各来源热门趋势 · 实时更新
+              各来源热门趋势 · 按语言/地区筛选
             </p>
           </div>
           <button
@@ -287,6 +297,30 @@ export default function Charts() {
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             刷新
           </button>
+        </div>
+      </section>
+
+      {/* 语言筛选 */}
+      <section className="animate-enter animate-enter-2">
+        <div className="flex flex-wrap gap-2">
+          {LANG_OPTIONS.map((opt) => {
+            const active = language === opt.key;
+            return (
+              <button
+                key={opt.key}
+                onClick={() => setLanguage(opt.key)}
+                className="rounded-full px-4 py-1.5 text-sm font-medium transition-all"
+                style={{
+                  border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  color: active ? "var(--accent)" : "var(--text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </section>
 

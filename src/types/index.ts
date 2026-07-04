@@ -32,6 +32,7 @@ export type TabKey =
   | "home"
   | "library"
   | "charts"
+  | "artists"
   | "downloads"
   | "favorites"
   | "playlists"

@@ -9,6 +9,7 @@ import { useAppStore } from "@/store/useAppStore";
 import Home from "@/pages/Home";
 import Library from "@/pages/Library";
 import Charts from "@/pages/Charts";
+import Artists from "@/pages/Artists";
 import Downloads from "@/pages/Downloads";
 import Favorites from "@/pages/Favorites";
 import Playlists from "@/pages/Playlists";
@@ -101,6 +102,7 @@ export default function App() {
           {activeTab === "home" && <Home />}
           {activeTab === "library" && <Library />}
           {activeTab === "charts" && <Charts />}
+          {activeTab === "artists" && <Artists />}
           {activeTab === "downloads" && <Downloads />}
           {activeTab === "favorites" && <Favorites />}
           {activeTab === "playlists" && <Playlists />}
