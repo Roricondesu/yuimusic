@@ -250,7 +250,8 @@ const fetchLrclibGet = async (
   });
   if (album) params.set("album_name", album);
 
-  const res = await fetch(`https://lrclib.net/api/get?${params}`);
+  const base = import.meta.env.DEV ? "https://lrclib.net/api/get" : "/api/proxy/lrclib/api/get";
+  const res = await fetch(`${base}?${params}`);
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`LRCLIB get 错误: ${res.status}`);
   return (await res.json()) as LrclibGetResult;
@@ -259,9 +260,8 @@ const fetchLrclibGet = async (
 const fetchLrclibSearch = async (
   q: string,
 ): Promise<LrclibSearchResult[]> => {
-  const res = await fetch(
-    `https://lrclib.net/api/search?q=${encodeURIComponent(q)}`,
-  );
+  const base = import.meta.env.DEV ? "https://lrclib.net/api/search" : "/api/proxy/lrclib/api/search";
+  const res = await fetch(`${base}?q=${encodeURIComponent(q)}`);
   if (!res.ok) return [];
   const data = await res.json();
   return (data as { results?: LrclibSearchResult[] }).results || [];
@@ -590,15 +590,14 @@ interface NeteaseLyricResponse {
 /**
  * 构造网易云 API URL。
  * - 开发环境：通过 Vite 代理（/netease-api），无 CORS 问题
- * - 生产环境：通过 CORS 代理访问
+ * - 生产环境：通过 EdgeOne Edge Function 代理（/api/proxy/netease）
  */
 const buildNeteaseUrl = (path: string, params: Record<string, string>): string => {
   const queryString = new URLSearchParams(params).toString();
   if (import.meta.env.DEV) {
     return `/netease-api${path}?${queryString}`;
   }
-  const directUrl = `https://music.163.com${path}?${queryString}`;
-  return `https://corsproxy.io/?url=${encodeURIComponent(directUrl)}`;
+  return `/api/proxy/netease${path}?${queryString}`;
 };
 
 /** 在网易云搜索结果中挑选最佳匹配 */
@@ -782,16 +781,13 @@ const buildKugouUrl = (base: string, params: Record<string, string>): string => 
   if (import.meta.env.DEV) {
     return `/kugou-api${base}?${query}`;
   }
-  const directUrl = `http://lyrics.kugou.com${base}?${query}`;
-  return `https://corsproxy.io/?url=${encodeURIComponent(directUrl)}`;
+  return `/api/proxy/kugou${base}?${query}`;
 };
 
 const searchKugou = async (q: string): Promise<KugouSong[]> => {
   const url = import.meta.env.DEV
     ? `/kugou-api/api/v3/search/song?format=json&keyword=${encodeURIComponent(q)}&page=1&pagesize=15`
-    : `https://corsproxy.io/?url=${encodeURIComponent(
-        `http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=${encodeURIComponent(q)}&page=1&pagesize=15`,
-      )}`;
+    : `/api/proxy/kugou-search/api/v3/search/song?format=json&keyword=${encodeURIComponent(q)}&page=1&pagesize=15`;
   const res = await fetch(url);
   if (!res.ok) return [];
   const data = (await res.json()) as KugouSearchResponse;
