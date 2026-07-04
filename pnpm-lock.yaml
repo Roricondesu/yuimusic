@@ -4,9 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  electron-to-chromium: 1.5.385
-
 importers:
 
   .:
@@ -69,6 +66,9 @@ importers:
       babel-plugin-react-dev-locator:
         specifier: ^1.0.0
         version: 1.0.6
+      electron-to-chromium:
+        specifier: 1.5.385
+        version: 1.5.385
       eslint:
         specifier: ^9.25.0
         version: 9.39.4(jiti@1.21.7)

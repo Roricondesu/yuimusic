@@ -31,6 +31,7 @@
     "@capacitor/cli": "^6.1.2",
     "@eslint/js": "^9.25.0",
     "@types/node": "^22.15.30",
+    "electron-to-chromium": "1.5.385",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.4.1",
@@ -47,8 +48,5 @@
     "vite": "^6.3.5",
     "vite-plugin-trae-solo-badge": "^1.0.0",
     "vite-tsconfig-paths": "^5.1.4"
-  },
-  "resolutions": {
-    "electron-to-chromium": "1.5.385"
   }
 }
