@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../store/useAppStore";
-import { getOsuAudioUrl, fetchBilibiliAudioUrl } from "../utils/musicSources";
+import { getOsuAudioUrl } from "../utils/musicSources";
 
 /** 一段极短的静音 WAV，用于首次用户手势时解锁音频自动播放 */
 const SILENT_WAV =
@@ -244,32 +244,7 @@ export const useAudio = () => {
     }
 
     // 非 osu 曲目：正常播放
-    // Bilibili 音频：src 为空占位，按需解析流地址
-    if (currentTrack.source === "bilibili" && currentTrack.bilibiliAuId != null) {
-      // 已解析过则直接用
-      if (currentTrack.src && currentTrack.src.startsWith("http")) {
-        if (audio.src !== currentTrack.src) {
-          audio.src = currentTrack.src;
-          audio.load();
-          actualSrcRef.current = currentTrack.src;
-        }
-      } else {
-        // 调用 Edge Function 代理解析 CDN 地址
-        fetchBilibiliAudioUrl(currentTrack.bilibiliAuId).then((url) => {
-          if (!url) return;
-          const current = useAppStore.getState().player.currentTrack;
-          if (current?.id !== currentTrack.id) return;
-          if (audioRef.current && !audioRef.current.src.endsWith(url)) {
-            audioRef.current.src = url;
-            audioRef.current.load();
-            actualSrcRef.current = url;
-            if (useAppStore.getState().player.isPlaying) {
-              audioRef.current.play().catch(() => setPlaying(false));
-            }
-          }
-        });
-      }
-    } else if (audio.src !== currentTrack.src) {
+    if (audio.src !== currentTrack.src) {
       audio.src = currentTrack.src;
       audio.load();
       actualSrcRef.current = currentTrack.src;

@@ -48,9 +48,6 @@ const buildPingUrl = (source: TrackSource): { url: string; init?: RequestInit } 
       return { url: "https://api.jamendo.com/v3.0/tracks/?client_id=e3e05969&format=json&limit=1" };
     case "osu":
       return { url: "https://osu.direct/api/v2/search?q=pop&mode=0&limit=1" };
-    case "bilibili":
-      // 走代理（dev: vite proxy / prod: edge function）
-      return { url: "/api/proxy/bilibili/x/web-interface/search/type?search_type=audio&keyword=test&page=1&page_size=1" };
     case "ia":
       return { url: "/api/proxy/ia/advancedsearch.php?q=collection:audio%20AND%20mediatype:audio&rows=1&output=json" };
     case "deezer":

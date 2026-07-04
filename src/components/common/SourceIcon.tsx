@@ -7,7 +7,6 @@ import type { TrackSource } from "../../types";
  * - Audius：Audius 波形 logo
  * - Jamendo：音乐音符（独立/CC 授权音乐）
  * - osu!：osu 圆圈徽标
- * - Bilibili：B 站电视机 logo
  * - Internet Archive：IA 圆顶建筑 logo
  * - Deezer：Deezer 波形 logo
  * 用 SVG 绘制，替代文字徽章。
@@ -78,19 +77,6 @@ const OsuGlyph: React.FC<{ size: number }> = ({ size }) => (
   </svg>
 );
 
-/** Bilibili 电视机 logo（简化） */
-const BilibiliGlyph: React.FC<{ size: number }> = ({ size }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    aria-hidden="true"
-  >
-    <path d="M17 3l-3 3h-4L7 3 5.6 4.4 7.2 6H5a3 3 0 00-3 3v9a3 3 0 003 3h14a3 3 0 003-3V9a3 3 0 00-3-3h-2.2l1.6-1.6L17 3zm-8 8a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4zm6 0a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z" />
-  </svg>
-);
-
 /** Internet Archive 圆顶建筑 logo（简化） */
 const IaGlyph: React.FC<{ size: number }> = ({ size }) => (
   <svg
@@ -156,11 +142,6 @@ const SOURCE_META: Record<
     color: "#ff66ab",
     bg: "rgba(255,102,171,0.15)",
   },
-  bilibili: {
-    title: "Bilibili · 音频区完整内容",
-    color: "#fb7299",
-    bg: "rgba(251,114,153,0.15)",
-  },
   ia: {
     title: "Internet Archive · 公有领域",
     color: "#60a5fa",
@@ -188,8 +169,6 @@ export const SourceIcon: React.FC<SourceIconProps> = ({
       <JamendoGlyph size={size} />
     ) : source === "osu" ? (
       <OsuGlyph size={size} />
-    ) : source === "bilibili" ? (
-      <BilibiliGlyph size={size} />
     ) : source === "ia" ? (
       <IaGlyph size={size} />
     ) : source === "deezer" ? (

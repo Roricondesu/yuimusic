@@ -401,117 +401,6 @@ export const getOsuAudioUrl = async (
   }
 };
 
-// === Bilibili 音频区 ===
-// 通过 Edge Function 代理 /api/proxy/bilibili/* 调用 api.bilibili.com
-// Web 端音频流接口仅返回 192K 标准音质，付费歌曲返回 30s 试听片段
-// 完整音频需通过 au_id 调用 /audio/music-service-c/web/url 获取 cdns
-
-interface BilibiliSearchItem {
-  id: number;
-  type: string;
-  title: string;
-  author: string;
-  duration: number; // 秒
-  cover: string;
-  song_id: number; // au_id
-  bvid: string;
-}
-
-interface BilibiliSearchResp {
-  code: number;
-  data?: {
-    result?: BilibiliSearchItem[];
-  };
-  message?: string;
-}
-
-const BILIBILI_PROXY = "/api/proxy/bilibili";
-
-/** HTML 实体解码（B 站搜索结果 title 中常含 &amp; &lt; 等） */
-const decodeHtmlEntities = (s: string): string => {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
-};
-
-const mapBilibiliToTrack = (item: BilibiliSearchItem): Track => {
-  const auId = item.song_id || item.id;
-  // 流地址需播放时按需获取（避免搜索阶段产生大量请求）
-  // src 字段填占位 URL，播放时调用 fetchBilibiliAudioUrl 解析
-  return {
-    id: `bilibili-${auId}`,
-    title: decodeHtmlEntities(item.title).replace(/<[^>]+>/g, ""),
-    artist: decodeHtmlEntities(item.author),
-    album: "Bilibili 音频",
-    cover: item.cover
-      ? item.cover.startsWith("//")
-        ? `https:${item.cover}`
-        : item.cover
-      : "",
-    duration: item.duration || 0,
-    src: "", // 占位，播放时通过 fetchBilibiliAudioUrl 解析
-    source: "bilibili",
-    preview: false, // 大部分 B 站音频为完整内容（除付费歌曲返回 30s 试听）
-    bilibiliAuId: auId,
-    bilibiliBvid: item.bvid,
-  };
-};
-
-const searchBilibili = async (
-  term: string,
-  limit = 20,
-): Promise<Track[]> => {
-  if (!term.trim()) return [];
-  const url = `${BILIBILI_PROXY}/x/web-interface/search/type?search_type=audio&keyword=${encodeURIComponent(
-    term,
-  )}&page=1&page_size=${limit}`;
-  const res = await fetch(url, {
-    headers: { Accept: "application/json, text/plain, */*" },
-  });
-  if (!res.ok) throw new Error("Bilibili 搜索失败");
-  const data = (await res.json()) as BilibiliSearchResp;
-  if (data.code !== 0 || !data.data?.result) return [];
-  return data.data.result
-    .filter((r) => r.song_id && r.duration > 0)
-    .map(mapBilibiliToTrack);
-};
-
-interface BilibiliUrlResp {
-  code: number;
-  data?: {
-    cdns?: string[];
-    timeout?: number;
-  };
-  message?: string;
-}
-
-/**
- * 按需解析 Bilibili 音频流 URL。
- * 调用 /audio/music-service-c/web/url 接口获取 CDN 地址。
- * 失败回退到 bvid 对应视频的播放页（不直接播放）。
- */
-export const fetchBilibiliAudioUrl = async (auId: number): Promise<string> => {
-  if (!auId) return "";
-  const url = `${BILIBILI_PROXY}/audio/music-service-c/web/url?sid=${auId}&quality=2&privilege=2`;
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: "application/json, text/plain, */*" },
-    });
-    if (!res.ok) return "";
-    const data = (await res.json()) as BilibiliUrlResp;
-    if (data.code === 0 && data.data?.cdns?.length) {
-      return data.data.cdns[0];
-    }
-  } catch {
-    // fallthrough
-  }
-  return "";
-};
-
 // === Internet Archive (archive.org) ===
 // 完全公开 API，无需 key，曲库以公有领域老歌、现场录音、CC 内容为主
 // 元数据接口: /metadata/{identifier}
@@ -600,29 +489,37 @@ const buildIaTrackFromMetadata = async (
   hintTitle?: string,
   hintArtist?: string,
 ): Promise<Track | null> => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
   const url = `${IA_PROXY}/metadata/${identifier}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const data = (await res.json()) as IaMetadataResp;
-  if (!data.metadata && !data.files?.length) return null;
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return null;
+    const data = (await res.json()) as IaMetadataResp;
+    if (!data.metadata && !data.files?.length) return null;
 
-  const title = data.metadata?.title || hintTitle || identifier;
-  const artist = data.metadata?.creator || hintArtist || "Internet Archive";
-  const year = data.metadata?.date?.slice(0, 4) || "";
-  const audio = pickIaAudioFile(data.files || []);
-  if (!audio) return null;
+    const title = data.metadata?.title || hintTitle || identifier;
+    const artist = data.metadata?.creator || hintArtist || "Internet Archive";
+    const year = data.metadata?.date?.slice(0, 4) || "";
+    const audio = pickIaAudioFile(data.files || []);
+    if (!audio) return null;
 
-  return {
-    id: `ia-${identifier}`,
-    title,
-    artist: Array.isArray(artist) ? artist[0] : artist,
-    album: year ? `Internet Archive · ${year}` : "Internet Archive",
-    cover: "",
-    duration: audio.duration,
-    src: `https://archive.org/download/${identifier}/${encodeURIComponent(audio.name)}`,
-    source: "ia",
-    preview: false,
-  };
+    return {
+      id: `ia-${identifier}`,
+      title,
+      artist: Array.isArray(artist) ? artist[0] : artist,
+      album: year ? `Internet Archive · ${year}` : "Internet Archive",
+      cover: "",
+      duration: audio.duration,
+      src: `https://archive.org/download/${identifier}/${encodeURIComponent(audio.name)}`,
+      source: "ia",
+      preview: false,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 };
 
 const searchInternetArchive = async (
@@ -630,37 +527,45 @@ const searchInternetArchive = async (
   limit = 20,
 ): Promise<Track[]> => {
   if (!term.trim()) return [];
-  // 搜索条件：音频集合 + 标题/描述含关键词 + mediatype=audio
-  const q = `collection:audio AND (title:"${term}" OR description:"${term}") AND mediatype:audio`;
+  // 搜索条件：宽松匹配关键词 + mediatype=audio
+  const q = `${term} AND mediatype:audio`;
   const url = `${IA_PROXY}/advancedsearch.php?q=${encodeURIComponent(
     q,
   )}&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=date&fl[]=downloads&rows=${limit}&page=1&output=json`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Internet Archive 搜索失败");
-  const data = (await res.json()) as IaSearchResp;
-  const docs = data.response?.docs || [];
-  if (!docs.length) return [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) return [];
+    const data = (await res.json()) as IaSearchResp;
+    const docs = data.response?.docs || [];
+    if (!docs.length) return [];
 
-  // 并发拉取每个 identifier 的元数据（最多 8 路并发避免过载）
-  const concurrency = 8;
-  const results: Track[] = [];
-  for (let i = 0; i < docs.length; i += concurrency) {
-    const batch = docs.slice(i, i + concurrency);
-    const tracks = await Promise.all(
-      batch.map((d) =>
-        buildIaTrackFromMetadata(
-          d.identifier,
-          d.title,
-          Array.isArray(d.creator) ? d.creator[0] : d.creator,
-        ).catch(() => null),
-      ),
-    );
-    for (const t of tracks) {
-      if (t) results.push(t);
+    // 并发拉取每个 identifier 的元数据（最多 8 路并发避免过载）
+    const concurrency = 8;
+    const results: Track[] = [];
+    for (let i = 0; i < docs.length; i += concurrency) {
+      const batch = docs.slice(i, i + concurrency);
+      const tracks = await Promise.all(
+        batch.map((d) =>
+          buildIaTrackFromMetadata(
+            d.identifier,
+            d.title,
+            Array.isArray(d.creator) ? d.creator[0] : d.creator,
+          ).catch(() => null),
+        ),
+      );
+      for (const t of tracks) {
+        if (t) results.push(t);
+      }
+      if (results.length >= limit) break;
     }
-    if (results.length >= limit) break;
+    return results.slice(0, limit);
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
   }
-  return results.slice(0, limit);
 };
 
 // === Deezer ===
@@ -697,9 +602,12 @@ const searchDeezer = async (term: string, limit = 25): Promise<Track[]> => {
   if (!term.trim()) return [];
   // Deezer API 支持 CORS，但有 50 req/5s 的 QPS 限制
   // 失败则返回空数组，mixed 模式下其他源兜底
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const res = await fetch(
       `https://api.deezer.com/search?q=${encodeURIComponent(term)}&limit=${limit}`,
+      { signal: controller.signal },
     );
     if (!res.ok) return [];
     const data = (await res.json()) as DeezerSearchResp;
@@ -709,6 +617,8 @@ const searchDeezer = async (term: string, limit = 25): Promise<Track[]> => {
       .map(mapDeezerToTrack);
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 };
 
@@ -731,7 +641,6 @@ export interface ChartSection {
  * - Jamendo：按 popularity 排序
  * - osu!：搜索 "popular" 获取热门谱面
  * - iTunes：搜索 "top hits" 获取热门歌曲
- * - Bilibili：搜索 "热门" 获取音频区热门内容
  * - Internet Archive：搜索 "popular music" 获取公有领域资源
  * - Deezer：搜索 "top hits" 获取主流版权试听
  */
@@ -741,12 +650,11 @@ export const fetchCharts = async (
   const jamendoKey = jamendoClientId?.trim() || JAMENDO_DEFAULT_CLIENT_ID;
   const fetchJamendoTrending = createFetchJamendoTrending(jamendoKey);
 
-  const [audius, jamendo, osu, itunes, bilibili, ia, deezer] = await Promise.allSettled([
+  const [audius, jamendo, osu, itunes, ia, deezer] = await Promise.allSettled([
     fetchAudiusTrending(20),
     fetchJamendoTrending(20),
     searchOsu("popular", 20),
     searchItunes("top hits", 20),
-    searchBilibili("热门音乐", 20),
     searchInternetArchive("popular music", 15),
     searchDeezer("top hits", 20),
   ]);
@@ -778,13 +686,6 @@ export const fetchCharts = async (
       title: "iTunes 热门歌曲",
       source: "itunes",
       tracks: itunes.value,
-    });
-  }
-  if (bilibili.status === "fulfilled" && bilibili.value.length) {
-    sections.push({
-      title: "Bilibili 音频区",
-      source: "bilibili",
-      tracks: bilibili.value,
     });
   }
   if (ia.status === "fulfilled" && ia.value.length) {
@@ -832,12 +733,11 @@ export const fetchChartsByLanguage = async (
   const searchJamendo = createSearchJamendo(jamendoKey);
   const query = LANGUAGE_QUERIES[language];
 
-  const [audius, jamendo, osu, itunes, bilibili, ia, deezer] = await Promise.allSettled([
+  const [audius, jamendo, osu, itunes, ia, deezer] = await Promise.allSettled([
     searchAudius(query, 20),
     searchJamendo(query, 20),
     searchOsu(query, 15),
     searchItunes(query, 20),
-    searchBilibili(query, 20),
     searchInternetArchive(query, 15),
     searchDeezer(query, 20),
   ]);
@@ -863,9 +763,6 @@ export const fetchChartsByLanguage = async (
   }
   if (itunes.status === "fulfilled" && itunes.value.length) {
     sections.push({ title: `iTunes · ${label}`, source: "itunes", tracks: itunes.value });
-  }
-  if (bilibili.status === "fulfilled" && bilibili.value.length) {
-    sections.push({ title: `Bilibili · ${label}`, source: "bilibili", tracks: bilibili.value });
   }
   if (ia.status === "fulfilled" && ia.value.length) {
     sections.push({ title: `Internet Archive · ${label}`, source: "ia", tracks: ia.value });
@@ -998,7 +895,6 @@ export const searchTracks = async (
     | "audius"
     | "jamendo"
     | "osu"
-    | "bilibili"
     | "ia"
     | "deezer" = "mixed",
   limit = 40,
@@ -1043,14 +939,6 @@ export const searchTracks = async (
         return { tracks: [], partial: true };
       }
     }
-    if (preferred === "bilibili") {
-      try {
-        const t = await searchBilibili("热门音乐", limit);
-        return { tracks: t, partial: false };
-      } catch {
-        return { tracks: [], partial: true };
-      }
-    }
     if (preferred === "ia") {
       try {
         const t = await searchInternetArchive("popular music", limit);
@@ -1068,12 +956,11 @@ export const searchTracks = async (
       }
     }
     // mixed：完整源轮询穿插，试听源放最后
-    const perSource = Math.ceil(limit / 7);
-    const [audius, jamendo, osu, bilibili, ia, itunes, deezer] = await Promise.allSettled([
+    const perSource = Math.ceil(limit / 6);
+    const [audius, jamendo, osu, ia, itunes, deezer] = await Promise.allSettled([
       fetchAudiusTrending(perSource),
       fetchJamendoTrending(perSource),
       searchOsu("pop", perSource),
-      searchBilibili("热门音乐", perSource),
       searchInternetArchive("popular music", Math.floor(perSource / 2)),
       searchItunes("pop", perSource),
       searchDeezer("top hits", perSource),
@@ -1082,7 +969,6 @@ export const searchTracks = async (
       audius.status === "fulfilled" ? audius.value : [],
       jamendo.status === "fulfilled" ? jamendo.value : [],
       osu.status === "fulfilled" ? osu.value : [],
-      bilibili.status === "fulfilled" ? bilibili.value : [],
       ia.status === "fulfilled" ? ia.value : [],
     ]);
     const tracks = [
@@ -1096,7 +982,6 @@ export const searchTracks = async (
         audius.status === "rejected" ||
         jamendo.status === "rejected" ||
         osu.status === "rejected" ||
-        bilibili.status === "rejected" ||
         ia.status === "rejected" ||
         itunes.status === "rejected" ||
         deezer.status === "rejected",
@@ -1152,18 +1037,6 @@ export const searchTracks = async (
       return { tracks: [], partial: true };
     }
   }
-  if (preferred === "bilibili") {
-    try {
-      const t = await searchSourceWithQueries(
-        queries,
-        searchBilibili,
-        Math.max(1, Math.ceil(limit / queries.length)),
-      );
-      return { tracks: t, partial: false };
-    } catch {
-      return { tracks: [], partial: true };
-    }
-  }
   if (preferred === "ia") {
     try {
       const t = await searchSourceWithQueries(
@@ -1189,17 +1062,16 @@ export const searchTracks = async (
     }
   }
 
-  // mixed：完整源轮询穿插（Audius/Jamendo/osu!/Bilibili/IA），试听源（iTunes/Deezer）放最后
-  const perSourceLimit = Math.ceil(limit / 7);
+  // mixed：完整源轮询穿插（Audius/Jamendo/osu!/IA），试听源（iTunes/Deezer）放最后
+  const perSourceLimit = Math.ceil(limit / 6);
   const perQueryLimit = Math.max(
     1,
     Math.ceil(perSourceLimit / queries.length),
   );
-  const [audius, jamendo, osu, bilibili, ia, itunes, deezer] = await Promise.allSettled([
+  const [audius, jamendo, osu, ia, itunes, deezer] = await Promise.allSettled([
     searchSourceWithQueries(queries, searchAudius, perQueryLimit),
     searchSourceWithQueries(queries, searchJamendo, perQueryLimit),
     searchOsu(trimmed, perSourceLimit),
-    searchSourceWithQueries(queries, searchBilibili, perQueryLimit),
     searchSourceWithQueries(queries, searchInternetArchive, Math.max(1, Math.floor(perQueryLimit / 2))),
     searchSourceWithQueries(queries, searchItunes, perQueryLimit),
     searchSourceWithQueries(queries, searchDeezer, perQueryLimit),
@@ -1208,7 +1080,6 @@ export const searchTracks = async (
     audius.status === "fulfilled" ? audius.value : [],
     jamendo.status === "fulfilled" ? jamendo.value : [],
     osu.status === "fulfilled" ? osu.value : [],
-    bilibili.status === "fulfilled" ? bilibili.value : [],
     ia.status === "fulfilled" ? ia.value : [],
   ]);
   const tracks = [
@@ -1224,7 +1095,6 @@ export const searchTracks = async (
       audius.status === "rejected" ||
       jamendo.status === "rejected" ||
       osu.status === "rejected" ||
-      bilibili.status === "rejected" ||
       ia.status === "rejected" ||
       itunes.status === "rejected" ||
       deezer.status === "rejected",
@@ -1263,13 +1133,6 @@ export const sourceInfo = (
         short: "谱面",
         copyright: false,
         full: false,
-      };
-    case "bilibili":
-      return {
-        label: "Bilibili · 音频区完整内容",
-        short: "B站",
-        copyright: false,
-        full: true,
       };
     case "ia":
       return {

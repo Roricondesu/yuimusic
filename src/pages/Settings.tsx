@@ -72,11 +72,10 @@ const SOURCE_OPTIONS: {
   label: string;
   desc: string;
 }[] = [
-  { key: "mixed", label: "混源", desc: "7 源并行（Audius/Jamendo/osu!/Bilibili/IA/iTunes/Deezer），完整优先，中文搜索经 MusicBrainz 别名增强" },
+  { key: "mixed", label: "混源", desc: "6 源并行（Audius/Jamendo/osu!/IA/iTunes/Deezer），完整优先，中文搜索经 MusicBrainz 别名增强" },
   { key: "audius", label: "Audius", desc: "去中心化完整免费音乐" },
   { key: "jamendo", label: "Jamendo", desc: "独立音乐人 CC 授权完整音乐，需 client_id" },
   { key: "osu", label: "osu!", desc: "从 osu.direct 下载 .osz 并解压提取音频" },
-  { key: "bilibili", label: "Bilibili", desc: "B 站音频区，ACG/翻唱/独立音乐为主" },
   { key: "ia", label: "Internet Archive", desc: "公有领域老歌/现场录音/CC 内容" },
   { key: "deezer", label: "Deezer", desc: "欧洲版权音乐，30 秒试听" },
   { key: "itunes", label: "iTunes", desc: "主流版权音乐，30 秒试听" },
@@ -755,7 +754,6 @@ const ALL_PING_SOURCES: TrackSource[] = [
   "audius",
   "jamendo",
   "osu",
-  "bilibili",
   "ia",
   "itunes",
   "deezer",
@@ -766,7 +764,6 @@ const SOURCE_LABEL: Record<TrackSource, string> = {
   audius: "Audius",
   jamendo: "Jamendo",
   osu: "osu!",
-  bilibili: "Bilibili",
   ia: "Internet Archive",
   deezer: "Deezer",
 };
@@ -1423,7 +1420,7 @@ const AboutSection = memo(function AboutSection({ scheme }: { scheme: Scheme }) 
       <div className="flex flex-col gap-2 text-sm">
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>版本</span><span style={{ color: "var(--text-primary)" }}>0.2.0</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>玻璃引擎</span><span style={{ color: "var(--text-primary)" }}>@samasante/liquid-glass</span></div>
-        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu! · Bilibili · Internet Archive · Deezer</span></div>
+        <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>音乐来源</span><span style={{ color: "var(--text-primary)" }}>Audius · iTunes · Jamendo · osu! · Internet Archive · Deezer</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>元数据增强</span><span style={{ color: "var(--text-primary)" }}>MusicBrainz</span></div>
         <div className="flex justify-between"><span style={{ color: "var(--text-secondary)" }}>歌词来源</span><span style={{ color: "var(--text-primary)" }}>LRCLIB · 网易云音乐 · 酷狗音乐</span></div>
       </div>
@@ -1437,7 +1434,6 @@ const AboutSection = memo(function AboutSection({ scheme }: { scheme: Scheme }) 
             { label: "MusicBrainz API", href: "https://musicbrainz.org/doc/MusicBrainz_API" },
             { label: "Jamendo API", href: "https://developer.jamendo.com/v3.0/docs" },
             { label: "osu.direct", href: "https://osu.direct" },
-            { label: "Bilibili", href: "https://www.bilibili.com" },
             { label: "Internet Archive", href: "https://archive.org" },
             { label: "Deezer API", href: "https://developers.deezer.com/api" },
             { label: "LRCLIB", href: "https://lrclib.net/" },

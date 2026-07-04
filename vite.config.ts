@@ -59,48 +59,6 @@ const neteaseProxyPlugin = (): Plugin => ({
     proxyApi('/kugou-search', 'http://mobilecdn.kugou.com');
     // Internet Archive API（搜索 + 元数据）
     proxyApi('/api/proxy/ia', 'https://archive.org');
-
-    // Bilibili API：/audio/* 走 www.bilibili.com，其它走 api.bilibili.com
-    server.middlewares.use('/api/proxy/bilibili', async (req, res) => {
-      try {
-        const subPath = req.url?.replace(/^\/api\/proxy\/bilibili/, '') || '';
-        const isAudioPath = subPath.startsWith('/audio');
-        const baseUrl = isAudioPath ? 'https://www.bilibili.com' : 'https://api.bilibili.com';
-        const targetUrl = `${baseUrl}${subPath}`;
-
-        const headers: Record<string, string> = {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/json, text/plain, */*',
-          'Referer': 'https://www.bilibili.com/',
-          'Origin': 'https://www.bilibili.com',
-        };
-        const forwardHeaders = ['content-type', 'cookie'];
-        for (const h of forwardHeaders) {
-          const value = req.headers[h];
-          if (value) headers[h] = Array.isArray(value) ? value[0] : value;
-        }
-
-        const response = await fetch(targetUrl, {
-          method: req.method,
-          headers,
-          body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined,
-        });
-
-        res.statusCode = response.status;
-        response.headers.forEach((value, key) => {
-          if (['content-encoding', 'content-length'].includes(key.toLowerCase())) return;
-          res.setHeader(key, value);
-        });
-        res.setHeader('Access-Control-Allow-Origin', '*');
-
-        const body = await response.arrayBuffer();
-        res.end(Buffer.from(body));
-      } catch (err) {
-        console.error('[bilibili-proxy] error:', err);
-        res.statusCode = 502;
-        res.end(JSON.stringify({ error: 'proxy error', message: String(err) }));
-      }
-    });
   },
 });
 

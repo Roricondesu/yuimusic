@@ -105,7 +105,6 @@ export default function Library() {
     audius: "Audius",
     jamendo: "Jamendo",
     osu: "osu!",
-    bilibili: "Bilibili",
     ia: "Internet Archive",
     deezer: "Deezer",
   };

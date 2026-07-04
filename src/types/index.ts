@@ -5,7 +5,6 @@ export type TrackSource =
   | "audius"
   | "jamendo"
   | "osu"
-  | "bilibili"
   | "ia"
   | "deezer";
 
@@ -24,10 +23,6 @@ export interface Track {
   osuSetId?: number;
   /** osu! 下载镜像：sayobot（国内快）| osu.direct */
   osuMirror?: "sayobot" | "osu.direct";
-  /** Bilibili 音频区 au_id，用于按需解析流地址 */
-  bilibiliAuId?: number;
-  /** Bilibili 视频 bvid（兜底用） */
-  bilibiliBvid?: string;
   /**
    * 同曲目不同来源的备选版本（名字+歌手相同视为同曲目）。
    * 主 Track 是首选来源，alternatives 是其他来源的可切换版本。
@@ -121,7 +116,6 @@ export interface AppSettings {
     | "audius"
     | "jamendo"
     | "osu"
-    | "bilibili"
     | "ia"
     | "deezer";
   /** Jamendo API client_id（空则使用默认测试 key，可能被限流/停用） */
