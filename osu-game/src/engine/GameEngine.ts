@@ -297,9 +297,9 @@ export abstract class GameEngine {
   /** 添加判定文字（实际坐标由子类传入，这里用相对偏移） */
   protected spawnJudgePopup(judgement: Judgement, x: number, y: number, time: number): void {
     const map: Record<Judgement, { text: string; color: string; scale: number }> = {
-      "300": { text: "300", color: "#66cc44", scale: 1.1 },
-      "100": { text: "100", color: "#0a84ff", scale: 1 },
-      "50": { text: "50", color: "#ff9100", scale: 0.95 },
+      "300": { text: "PERFECT", color: "#66cc44", scale: 1.15 },
+      "100": { text: "GREAT", color: "#0a84ff", scale: 1.05 },
+      "50": { text: "GOOD", color: "#ff9100", scale: 0.95 },
       miss: { text: "MISS", color: "#ff375f", scale: 0.9 },
     };
     const info = map[judgement];
@@ -346,20 +346,28 @@ export abstract class GameEngine {
     const baseY = this.ctx.height * 0.42;
     for (const p of this.judgePopups) {
       const age = time - p.time;
-      const t = Math.min(age / 500, 1);
-      const y = baseY - t * 30;
-      const alpha = 1 - t;
-      const scale = p.scale * (1 + t * 0.1);
+      const t = Math.min(age / 520, 1);
+      const y = baseY - Math.sin(t * Math.PI) * 24;
+      const alpha = 1 - t * t;
+      const pop = Math.sin(Math.min(t * 6, Math.PI)) * 0.18;
+      const scale = p.scale * (1 + pop);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(centerX, y);
       ctx.scale(scale, scale);
-      drawText(this.ctx, p.text, 0, 0, {
-        font: `900 36px ${GAME_FONT}`,
-        fillStyle: p.color,
-        align: "center",
-        baseline: "middle",
-      });
+      ctx.font = `900 34px ${GAME_FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      // 外发光
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, 0, 0);
+      // 内高光描边
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.strokeText(p.text, 0, 0);
       ctx.restore();
     }
   }
