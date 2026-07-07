@@ -175,7 +175,23 @@ export const parseOsu = (text: string): ParsedBeatmap => {
       if (!kv) continue;
       const [k, v] = kv;
       if (k === "AudioFilename") result.audioFilename = v;
-      else if (k === "Mode") result.mode = MODE_FROM_ID[Number(v)] || "standard";
+      else if (k === "Mode") {
+        const num = Number(v);
+        if (!Number.isNaN(num)) {
+          result.mode = MODE_FROM_ID[num] || "standard";
+        } else {
+          const word = v.toLowerCase();
+          const map: Record<string, GameMode> = {
+            osu: "standard",
+            standard: "standard",
+            taiko: "taiko",
+            fruits: "catch",
+            catch: "catch",
+            mania: "mania",
+          };
+          result.mode = map[word] || "standard";
+        }
+      }
       else if (k === "StackLeniency") {
         /* 暂不处理堆叠 */
       }
