@@ -161,6 +161,8 @@ export interface Settings {
   accent: string;
   volume: number; // 0-1
   offset: number; // ms，判定时间偏移
+  auto: boolean; // 自动模式
+  showCursor: boolean; // 显示光标
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -168,4 +170,6 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: "#0a84ff",
   volume: 0.7,
   offset: 0,
+  auto: false,
+  showCursor: false,
 };

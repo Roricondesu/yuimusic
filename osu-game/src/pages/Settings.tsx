@@ -1,7 +1,7 @@
 import React from "react";
 import { useGameStore } from "@/store/useGameStore";
 import { GlassSwitch, GlassSlider } from "@/components/glass";
-import { Moon, Volume2, Clock, Palette, Info } from "lucide-react";
+import { Moon, Volume2, Clock, Palette, Info, Gamepad2 } from "lucide-react";
 import type { Settings } from "@/types";
 
 const ACCENTS = [
@@ -131,7 +131,37 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section icon={<Info size={18} />} title="关于" delay={4}>
+      <Section icon={<Gamepad2 size={18} />} title="游戏" delay={4}>
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>自动模式</div>
+              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>自动击打音符，适合练习观赏</div>
+            </div>
+            <GlassSwitch
+              checked={settings.auto}
+              onCheckedChange={(c) => updateSetting("auto", c)}
+              scheme={scheme}
+              ariaLabel="自动模式"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>显示光标</div>
+              <div className="text-xs" style={{ color: "var(--text-secondary)" }}>在游戏画面中显示指针位置</div>
+            </div>
+            <GlassSwitch
+              checked={settings.showCursor}
+              onCheckedChange={(c) => updateSetting("showCursor", c)}
+              scheme={scheme}
+              ariaLabel="显示光标"
+            />
+          </div>
+        </div>
+      </Section>
+
+      <Section icon={<Info size={18} />} title="关于" delay={5}>
         <div className="space-y-2 text-sm" style={{ color: "var(--text-secondary)" }}>
           <p>
             <strong style={{ color: "var(--text-primary)" }}>osu! game</strong> · 移动端节奏游戏

@@ -37,12 +37,28 @@ export abstract class GameEngine {
   protected audioStartedAt = 0; // audio.currentTime 起点
   protected callbacks: EngineCallbacks;
 
+  protected isLandscape = false;
+  protected auto = false;
+  protected showCursor = false;
+  protected cursorX = -100;
+  protected cursorY = -100;
+  protected cursorTargetX = -100;
+  protected cursorTargetY = -100;
+
+  protected backgroundImage: HTMLImageElement | null = null;
+  protected backgroundLoaded = false;
+  private lastFrameAt = 0;
+
   constructor(opts: {
     canvas: HTMLCanvasElement;
     audio: HTMLAudioElement;
     beatmap: ParsedBeatmap;
     offset?: number;
+    isLandscape?: boolean;
     callbacks?: EngineCallbacks;
+    backgroundUrl?: string;
+    auto?: boolean;
+    showCursor?: boolean;
   }) {
     this.canvas = opts.canvas;
     this.ctx = setupCanvas(opts.canvas);
@@ -50,7 +66,35 @@ export abstract class GameEngine {
     this.beatmap = opts.beatmap;
     this.offset = opts.offset || 0;
     this.windows = windowsForOD(opts.beatmap.od);
+    this.isLandscape = opts.isLandscape ?? this.ctx.width >= this.ctx.height;
     this.callbacks = opts.callbacks || {};
+    this.auto = opts.auto ?? false;
+    this.showCursor = opts.showCursor ?? false;
+    if (opts.backgroundUrl) this.loadBackground(opts.backgroundUrl);
+  }
+
+  private loadBackground(url: string): void {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      this.backgroundImage = img;
+      this.backgroundLoaded = true;
+    };
+    img.onerror = () => {
+      this.backgroundLoaded = false;
+    };
+    img.src = url;
+  }
+
+  /** 横竖屏切换 */
+  setOrientation(isLandscape: boolean): void {
+    this.isLandscape = isLandscape;
+    this.ctx = setupCanvas(this.canvas);
+    this.onLayoutChange();
+  }
+
+  protected onLayoutChange(): void {
+    // 子类重写
   }
 
   /** 当前游戏时间（毫秒，基于音频播放时间） */
@@ -92,6 +136,7 @@ export abstract class GameEngine {
     if (this.status !== "paused") return;
     this.status = "playing";
     this.audio.play().catch(() => {});
+    this.lastFrameAt = 0;
     this.loop();
   }
 
@@ -101,6 +146,7 @@ export abstract class GameEngine {
     this.audio.currentTime = 0;
     this.status = "playing";
     this.audio.play().catch(() => {});
+    this.lastFrameAt = 0;
     this.loop();
   }
 
@@ -116,9 +162,14 @@ export abstract class GameEngine {
   /** 主循环 */
   protected loop = (): void => {
     if (this.status !== "playing") return;
+    const now = performance.now();
+    const dt = this.lastFrameAt ? Math.min((now - this.lastFrameAt) / 1000, 0.05) : 0;
+    this.lastFrameAt = now;
     const time = this.getCurrentTime();
     this.update(time);
+    this.smoothCursor(dt);
     this.render();
+    this.drawCursor();
     this.callbacks.onScoreUpdate?.(this.score);
 
     // 检查是否结束（所有 hitObjects 已处理 + 音频结束）
@@ -179,7 +230,73 @@ export abstract class GameEngine {
 
   /** 清屏并绘制基础背景 */
   protected clearScreen(): void {
-    clear(this.ctx, "#000");
+    const { ctx, width, height } = this.ctx;
+    if (this.backgroundLoaded && this.backgroundImage && this.backgroundImage.complete && this.backgroundImage.naturalWidth > 0) {
+      const img = this.backgroundImage;
+      const imgAspect = img.naturalWidth / img.naturalHeight;
+      const canvasAspect = width / height;
+      let drawW: number, drawH: number, drawX: number, drawY: number;
+      if (canvasAspect > imgAspect) {
+        drawW = width;
+        drawH = width / imgAspect;
+        drawX = 0;
+        drawY = (height - drawH) / 2;
+      } else {
+        drawH = height;
+        drawW = height * imgAspect;
+        drawX = (width - drawW) / 2;
+        drawY = 0;
+      }
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      ctx.fillStyle = "rgba(0,0,0,0.68)";
+      ctx.fillRect(0, 0, width, height);
+    } else {
+      clear(this.ctx, "#000");
+    }
+  }
+
+  /** 光标位置更新 */
+  public setCursorPos(x: number, y: number): void {
+    this.cursorTargetX = x;
+    this.cursorTargetY = y;
+    if (!this.auto) {
+      this.cursorX = x;
+      this.cursorY = y;
+    }
+  }
+
+  /** 自动模式下对光标做平滑插值，避免瞬移 */
+  private smoothCursor(dt: number): void {
+    if (!this.auto) return;
+    if (this.cursorTargetX < 0 || this.cursorTargetY < 0) return;
+    const omega = 18; // 约 88ms 时间常数
+    const k = 1 - Math.exp(-omega * dt);
+    this.cursorX += (this.cursorTargetX - this.cursorX) * k;
+    this.cursorY += (this.cursorTargetY - this.cursorY) * k;
+  }
+
+  /** 绘制光标 */
+  protected drawCursor(): void {
+    if (!this.showCursor) return;
+    const { ctx } = this.ctx;
+    const x = this.cursorX;
+    const y = this.cursorY;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, 16, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.45)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 22, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
 
   // === 抽象方法（子类实现） ===
@@ -196,7 +313,12 @@ export abstract class GameEngine {
     for (const obj of this.beatmap.hitObjects) {
       obj.judged = false;
       obj.judgement = null;
+      obj._sliderHit = false;
     }
+    this.cursorX = -100;
+    this.cursorY = -100;
+    this.cursorTargetX = -100;
+    this.cursorTargetY = -100;
   }
 
   public getScore(): ScoreState {

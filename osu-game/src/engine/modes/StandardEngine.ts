@@ -1,33 +1,32 @@
-/** osu!standard 引擎
- *  - 圆圈：approach circle 从大到小，到达 hit time 时与本体重合
- *  - 滑条：圆圈沿曲线滑动 N 次
- *  - 转盘：按住后旋转
- *
- *  osu 坐标系 0-512 × 0-384，缩放到 Canvas
+/** osu!standard 引擎 - 扁平现代视觉
+ *  - 圆圈：纯色填充 + 白色边框 + combo 数字
+ *  - 滑条：纯色轨道 + 移动小球（真实插值）
+ *  - 转盘：纯色圆环 + 旋转指针
+ *  - 性能：预计算 combo、活动物件指针
  */
 import type { HitObject, ParsedBeatmap, Judgement } from "@/types";
 import { GameEngine } from "../GameEngine";
-import type { CanvasContext } from "../renderer/Canvas2D";
-import { drawCircle, drawRing, drawText, hexToRgba, clamp } from "../renderer/Canvas2D";
+import { drawCircle, drawRing, drawText, drawRect, clamp, lerp, GAME_FONT, hexToRgba } from "../renderer/Canvas2D";
 
 const OSU_W = 512;
 const OSU_H = 384;
-const CIRCLE_BASE_R = 32; // osu 默认圆半径（受 CS 影响）
+const CIRCLE_BASE_R = 34;
+
+const COMBO_COLORS = ["#f472b6", "#38bdf8", "#4ade80", "#fbbf24", "#a78bfa", "#fb7185", "#22d3ee", "#facc15"];
+const MODE_COLOR = "#f472b6";
 
 const arToPreempt = (ar: number): number => {
   if (ar < 5) return 1200 + 600 * (5 - ar) / 5;
   if (ar === 5) return 1200;
   return 1200 - 750 * (ar - 5) / 5;
 };
-
 const csToRadius = (cs: number): number => CIRCLE_BASE_R - 4 * cs / 10;
 
-interface ActiveHit {
-  obj: HitObject;
-  // slider
-  sliderT?: number; // 0-1 当前 slide 进度
-  sliderReversed?: boolean;
-  finished?: boolean;
+interface CachedObj {
+  comboColor: string;
+  comboNumber: number;
+  canvasPoints: { x: number; y: number }[];
+  sliderDuration: number;
 }
 
 export class StandardEngine extends GameEngine {
@@ -36,144 +35,329 @@ export class StandardEngine extends GameEngine {
   private offsetY = 0;
   private preempt = 1200;
   private r = CIRCLE_BASE_R;
-  private activePointer: { x: number; y: number; t: number } | null = null;
+  private spinnerRotation = 0;
+  private lastPointer: { x: number; y: number } | null = null;
+  private cached: CachedObj[] = [];
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
     audio: HTMLAudioElement;
     beatmap: ParsedBeatmap;
     offset?: number;
+    isLandscape?: boolean;
     callbacks?: import("../GameEngine").EngineCallbacks;
+    backgroundUrl?: string;
+    auto?: boolean;
+    showCursor?: boolean;
   }) {
     super(opts);
     this.preempt = arToPreempt(opts.beatmap.ar);
     this.r = csToRadius(opts.beatmap.cs);
+    this.precomputeObjects();
+    this.onLayoutChange();
+  }
+
+  private precomputeObjects(): void {
+    const objs = this.beatmap.hitObjects;
+    this.cached = new Array(objs.length);
+    let ci = 0, cn = 1;
+    let currentColor = COMBO_COLORS[0];
+    for (let i = 0; i < objs.length; i++) {
+      const obj = objs[i];
+      if (obj.newCombo) { ci = (ci + 1) % COMBO_COLORS.length; cn = 1; currentColor = COMBO_COLORS[ci]; }
+      obj._comboIndex = ci;
+      obj._comboNumber = cn;
+      const cache: CachedObj = {
+        comboColor: currentColor,
+        comboNumber: cn,
+        canvasPoints: [],
+        sliderDuration: 0,
+      };
+      if (obj.type === "slider") {
+        obj.endTime = obj.time + this.sliderDuration(obj);
+        cache.sliderDuration = obj.endTime - obj.time;
+        if (obj.curvePoints?.length) {
+          cache.canvasPoints = [{ x: obj.x, y: obj.y }, ...obj.curvePoints];
+        }
+      }
+      this.cached[i] = cache;
+      cn++;
+    }
+  }
+
+  private sliderDuration(obj: HitObject): number {
+    const pixelLength = obj.length || 0;
+    const slides = obj.slides || 1;
+    const sliderMultiplier = this.beatmap.sliderMultiplier || 1.4;
+    if (pixelLength <= 0 || slides <= 0) return 0;
+    const beatDuration = this.getBeatDurationAt(obj.time);
+    return (pixelLength * beatDuration * slides) / (100 * sliderMultiplier);
+  }
+
+  private getBeatDurationAt(time: number): number {
+    const tps = this.beatmap.timingPoints;
+    let current = tps.find((tp) => tp.uninherited) || tps[0];
+    for (const tp of tps) {
+      if (tp.time > time) break;
+      if (tp.uninherited && tp.beatLength > 0) current = tp;
+    }
+    return current?.beatLength || 500;
+  }
+
+  protected onLayoutChange(): void {
     this.computeLayout();
+    // 重新映射预计算点到 canvas 坐标
+    for (let i = 0; i < this.beatmap.hitObjects.length; i++) {
+      const obj = this.beatmap.hitObjects[i];
+      const c = this.cached[i];
+      if (obj.type === "slider" && obj.curvePoints?.length) {
+        c.canvasPoints = [{ x: obj.x, y: obj.y }, ...obj.curvePoints].map((p) => this.toCanvas(p.x, p.y));
+      }
+    }
   }
 
   private computeLayout(): void {
     const { width, height } = this.ctx;
-    // 留出顶部 HUD 空间
-    const padTop = 60;
-    const availH = height - padTop - 20;
-    const availW = width - 40;
-    this.scale = Math.min(availW / OSU_W, availH / OSU_H);
-    this.offsetX = (width - OSU_W * this.scale) / 2;
-    this.offsetY = padTop + (availH - OSU_H * this.scale) / 2;
+    const padTop = 110, padBottom = 24, padX = 18;
+    if (this.isLandscape) {
+      this.scale = Math.min((width - padX * 2) / OSU_W, (height - padTop - padBottom) / OSU_H);
+      this.offsetX = (width - OSU_W * this.scale) / 2;
+      this.offsetY = padTop + (height - padTop - padBottom - OSU_H * this.scale) / 2;
+    } else {
+      this.scale = Math.min((width - padX * 2) / OSU_H, (height - padTop - padBottom) / OSU_W);
+      this.offsetX = (width - OSU_H * this.scale) / 2;
+      this.offsetY = padTop + (height - padTop - padBottom - OSU_W * this.scale) / 2;
+    }
   }
 
-  private toCanvasX(x: number): number {
-    return this.offsetX + x * this.scale;
+  private toCanvas(x: number, y: number): { x: number; y: number } {
+    if (this.isLandscape) return { x: this.offsetX + x * this.scale, y: this.offsetY + y * this.scale };
+    return { x: this.offsetX + y * this.scale, y: this.offsetY + (OSU_W - x) * this.scale };
   }
-  private toCanvasY(y: number): number {
-    return this.offsetY + y * this.scale;
-  }
-  private get radius(): number {
-    return this.r * this.scale;
-  }
+
+  private get radius(): number { return this.r * this.scale; }
 
   protected update(time: number): void {
-    // 检查超时 miss
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged) continue;
-      this.checkMiss(time, obj);
+    this.advanceActiveIndex(time);
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = objs[i];
+      if (obj.judged && !(obj.type === "slider" && obj._sliderHit)) continue;
+      const endTime = obj.endTime || obj.time;
+      if (time > endTime + this.windows["50"]) {
+        if (obj.type === "slider" && obj._sliderHit) {
+          obj.judged = true;
+          obj.judgement = "300";
+          this.submitJudgement("300");
+        } else {
+          obj.judged = true;
+          obj.judgement = "miss";
+          this.submitJudgement("miss");
+        }
+      } else {
+        break; // 后面的物件时间更晚
+      }
     }
+    if (this.auto) this.autoPlay(time);
+    this.pruneHitEffects(time);
+  }
+
+  private advanceActiveIndex(time: number): void {
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    while (this.activeIndex < len) {
+      const obj = objs[this.activeIndex];
+      if (!obj.judged && time - (obj.endTime || obj.time) < this.windows["50"] + 200) break;
+      this.activeIndex++;
+    }
+  }
+
+  private autoPlay(time: number): void {
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    const win300 = this.windows["300"];
+    let targetX = this.cursorTargetX;
+    let targetY = this.cursorTargetY;
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = objs[i];
+      if (obj.judged || obj.type === "spinner") continue;
+      const delta = time - obj.time;
+      if (delta < -win300) break;
+      const p = this.toCanvas(obj.x, obj.y);
+      targetX = p.x;
+      targetY = p.y;
+      if (delta <= win300) {
+        if (obj.type === "slider") {
+          obj._sliderHit = true;
+          obj.judged = true;
+          obj.judgement = "300";
+          this.submitJudgement("300");
+        } else {
+          this.judgeHit(obj, time);
+        }
+        this.spawnHitEffect(p.x, p.y, "300", time);
+      }
+      break;
+    }
+    const spinner = this.findActiveSpinner(time);
+    if (spinner) {
+      const cx = this.ctx.width / 2, cy = this.ctx.height / 2;
+      this.spinnerRotation += 0.6;
+      if (this.spinnerRotation > 10) {
+        this.judgeHit(spinner, time);
+        this.spawnHitEffect(cx, cy, "300", time);
+        this.spinnerRotation = 0;
+      }
+      targetX = cx + Math.cos(time / 80) * 60;
+      targetY = cy + Math.sin(time / 80) * 60;
+    }
+    this.cursorTargetX = targetX;
+    this.cursorTargetY = targetY;
+  }
+
+  private findActiveSpinner(time: number): HitObject | null {
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = objs[i];
+      if (obj.type !== "spinner") continue;
+      if (obj.judged) continue;
+      if (time >= obj.time && time <= (obj.endTime || obj.time)) return obj;
+      if (obj.time > time) break;
+    }
+    return null;
   }
 
   protected render(): void {
     this.clearScreen();
-    const time = this.getCurrentTime();
-    const { ctx } = this.ctx;
+    const time = this.currentTime;
+    this.drawPlayfield();
 
-    // 绘制可见的 hit objects（preempt 时间内的）
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged && obj.judgement !== "miss") {
-        // 已击中的：绘制 hit 爆裂效果（简化为不绘制）
-        continue;
-      }
+    const objs = this.beatmap.hitObjects;
+    for (let i = objs.length - 1; i >= this.activeIndex; i--) {
+      const obj = objs[i];
+      if (obj.judged && obj.judgement !== "miss" && !(obj.type === "slider" && obj._sliderHit)) continue;
       const timeUntil = obj.time - time;
-      if (timeUntil > this.preempt) continue; // 还没到出现时间
-      if (time > (obj.endTime || obj.time) + 200 && obj.judged) continue;
+      if (timeUntil > this.preempt) continue;
+      const endTime = obj.endTime || obj.time;
+      if (obj.judged && time > endTime + 220) continue;
 
-      if (obj.type === "circle") {
-        this.drawCircle(obj, time);
-      } else if (obj.type === "slider") {
-        this.drawSlider(obj, time);
-      } else if (obj.type === "spinner") {
-        this.drawSpinner(obj, time);
-      }
+      if (obj.type === "circle") this.drawCircle(obj, i, time);
+      else if (obj.type === "slider") this.drawSlider(obj, i, time);
+      else if (obj.type === "spinner") this.drawSpinner(obj, time);
     }
 
-    // 绘制 HUD
-    this.drawHUD();
+    this.drawHitEffects(time);
+    this.drawJudgePopups(time);
+    this.drawHUD({ comboColor: MODE_COLOR, modeLabel: "osu!standard", modeColor: MODE_COLOR });
   }
 
-  private drawCircle(obj: HitObject, time: number): void {
-    const x = this.toCanvasX(obj.x);
-    const y = this.toCanvasY(obj.y);
+  private drawPlayfield(): void {
+    const tl = this.toCanvas(0, 0);
+    const br = this.toCanvas(OSU_W, OSU_H);
+    const minX = Math.min(tl.x, br.x), maxX = Math.max(tl.x, br.x);
+    const minY = Math.min(tl.y, br.y), maxY = Math.max(tl.y, br.y);
+    drawRect(this.ctx, minX, minY, maxX - minX, maxY - minY, "rgba(255,255,255,0.018)", 12);
+    this.ctx.ctx.strokeStyle = "rgba(255,255,255,0.08)";
+    this.ctx.ctx.lineWidth = 1;
+    this.ctx.ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+  }
+
+  private drawCircle(obj: HitObject, idx: number, time: number): void {
+    const c = this.cached[idx];
+    const p = this.toCanvas(obj.x, obj.y);
     const r = this.radius;
     const timeUntil = obj.time - time;
     const approachT = clamp(1 - timeUntil / this.preempt, 0, 1);
+    const color = c.comboColor;
 
-    // 主体圆
-    drawCircle(this.ctx, x, y, r, hexToRgba("#ff66aa", 0.85), "#fff", 3);
-    // 中心编号（简化为点）
-    drawCircle(this.ctx, x, y, r * 0.35, "rgba(255,255,255,0.6)");
-
-    // approach circle（从 4x 缩到 1x）
+    // approach circle
     if (approachT < 1) {
       const ar = r * (4 - 3 * approachT);
-      drawRing(this.ctx, x, y, ar, "rgba(255,255,255,0.85)", 3);
+      drawRing(this.ctx, p.x, p.y, ar, hexToRgba(color, 0.65), 2);
     }
+
+    // 主体圆 - 半透明毛玻璃感
+    drawCircle(this.ctx, p.x, p.y, r, hexToRgba(color, 0.45), "rgba(255,255,255,0.7)", 2);
+    // 内圈
+    drawCircle(this.ctx, p.x, p.y, r * 0.55, hexToRgba(color, 0.7));
+    // 中心点
+    drawCircle(this.ctx, p.x, p.y, r * 0.12, "rgba(255,255,255,0.9)");
+
+    // combo 数字
+    drawText(this.ctx, String(c.comboNumber), p.x, p.y - 1, {
+      font: `800 ${Math.max(12, Math.round(r * 0.9))}px ${GAME_FONT}`,
+      fillStyle: "rgba(255,255,255,0.95)",
+      align: "center",
+      baseline: "middle",
+    });
   }
 
-  private drawSlider(obj: HitObject, time: number): void {
-    if (!obj.curvePoints || !obj.curvePoints.length) {
-      this.drawCircle(obj, time);
+  private drawSlider(obj: HitObject, idx: number, time: number): void {
+    const c = this.cached[idx];
+    const color = c.comboColor;
+    const pts = c.canvasPoints;
+    const r = this.radius;
+    const timeUntil = obj.time - time;
+    const started = time >= obj.time;
+
+    if (pts.length < 2) {
+      // 退化成普通圆
+      this.drawCircle(obj, idx, time);
       return;
     }
+
+    // 轨道
     const { ctx } = this.ctx;
-    // 绘制曲线
-    const pts = [{ x: obj.x, y: obj.y }, ...obj.curvePoints].map((p) => ({
-      x: this.toCanvasX(p.x),
-      y: this.toCanvasY(p.y),
-    }));
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x, pts[i].y);
-    }
-    ctx.lineWidth = this.radius * 2;
-    ctx.strokeStyle = "rgba(255,255,255,0.18)";
+    ctx.save();
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.lineWidth = r * 2;
+    ctx.strokeStyle = hexToRgba(color, 0.32);
     ctx.stroke();
-    ctx.lineWidth = this.radius * 2 - 6;
-    ctx.strokeStyle = hexToRgba("#ff66aa", 0.5);
+    ctx.lineWidth = r * 1.7;
+    ctx.strokeStyle = hexToRgba(color, 0.55);
     ctx.stroke();
+    ctx.restore();
 
     // 头部圆
-    const headX = this.toCanvasX(obj.x);
-    const headY = this.toCanvasY(obj.y);
-    drawCircle(this.ctx, headX, headY, this.radius, hexToRgba("#ff66aa", 0.85), "#fff", 3);
+    drawCircle(this.ctx, pts[0].x, pts[0].y, r, hexToRgba(color, 0.42), "rgba(255,255,255,0.7)", 2);
+    drawCircle(this.ctx, pts[0].x, pts[0].y, r * 0.12, "rgba(255,255,255,0.9)");
+    drawText(this.ctx, String(c.comboNumber), pts[0].x, pts[0].y - 1, {
+      font: `800 ${Math.max(12, Math.round(r * 0.85))}px ${GAME_FONT}`,
+      fillStyle: "rgba(255,255,255,0.95)",
+      align: "center",
+      baseline: "middle",
+    });
 
-    // slider 球（如果在滑动中）
-    const dur = (obj.length || 0) / this.beatmap.sliderMultiplier * 1000 * obj.slides!;
-    if (time >= obj.time && time <= obj.time + dur) {
-      const t = ((time - obj.time) % (dur / obj.slides!)) / (dur / obj.slides!);
-      const slideIdx = Math.floor((time - obj.time) / (dur / obj.slides!));
-      const actualT = slideIdx % 2 === 0 ? t : 1 - t;
-      const pos = this.evalSliderPos(pts, actualT);
-      drawCircle(this.ctx, pos.x, pos.y, this.radius * 0.5, "#fff");
-    }
+    // 尾部圆
+    const tail = pts[pts.length - 1];
+    drawCircle(this.ctx, tail.x, tail.y, r, hexToRgba(color, 0.25), "rgba(255,255,255,0.4)", 2);
 
-    // approach circle（头部）
-    const timeUntil = obj.time - time;
+    // approach circle
     if (timeUntil > 0) {
       const approachT = clamp(1 - timeUntil / this.preempt, 0, 1);
       if (approachT < 1) {
-        const ar = this.radius * (4 - 3 * approachT);
-        drawRing(this.ctx, headX, headY, ar, "rgba(255,255,255,0.85)", 3);
+        const ar = r * (4 - 3 * approachT);
+        drawRing(this.ctx, pts[0].x, pts[0].y, ar, hexToRgba(color, 0.65), 2);
+      }
+    }
+
+    // 滑条球
+    if (started && !obj.judged) {
+      const sd = c.sliderDuration || 1;
+      const slides = obj.slides || 1;
+      const progressRaw = (time - obj.time) / sd;
+      const slideIdx = Math.floor(progressRaw * slides);
+      if (slideIdx < slides) {
+        const localT = (progressRaw * slides) % 1;
+        const t = slideIdx % 2 === 0 ? localT : 1 - localT;
+        const pos = this.evalSliderPos(pts, t);
+        drawCircle(this.ctx, pos.x, pos.y, r * 0.55, "rgba(255,255,255,0.95)", color, 3);
       }
     }
   }
@@ -181,15 +365,13 @@ export class StandardEngine extends GameEngine {
   private evalSliderPos(pts: { x: number; y: number }[], t: number): { x: number; y: number } {
     if (pts.length === 1) return pts[0];
     const totalLen = pts.reduce((sum, p, i) => i === 0 ? 0 : sum + Math.hypot(p.x - pts[i-1].x, p.y - pts[i-1].y), 0);
-    let target = totalLen * t;
+    if (totalLen === 0) return pts[0];
+    let target = totalLen * clamp(t, 0, 1);
     for (let i = 1; i < pts.length; i++) {
       const segLen = Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
       if (target <= segLen) {
         const k = segLen === 0 ? 0 : target / segLen;
-        return {
-          x: pts[i-1].x + (pts[i].x - pts[i-1].x) * k,
-          y: pts[i-1].y + (pts[i].y - pts[i-1].y) * k,
-        };
+        return { x: pts[i-1].x + (pts[i].x - pts[i-1].x) * k, y: pts[i-1].y + (pts[i].y - pts[i-1].y) * k };
       }
       target -= segLen;
     }
@@ -200,98 +382,76 @@ export class StandardEngine extends GameEngine {
     const cx = this.ctx.width / 2;
     const cy = this.offsetY + OSU_H * this.scale / 2;
     const r = Math.min(this.ctx.width, this.ctx.height) * 0.3;
+    drawRing(this.ctx, cx, cy, r, "rgba(255,255,255,0.18)", 6);
+    drawRing(this.ctx, cx, cy, r * 0.7, "rgba(255,255,255,0.12)", 3);
 
-    // 中心圆环
-    drawRing(this.ctx, cx, cy, r, "rgba(255,255,255,0.3)", 4);
-    drawRing(this.ctx, cx, cy, r * 0.7, "rgba(255,255,255,0.2)", 2);
-
-    // 进度
     const start = obj.time;
     const end = obj.endTime || obj.time;
     if (time >= start && time <= end) {
       const progress = (time - start) / (end - start);
-      // 旋转标记
-      const angle = progress * Math.PI * 8;
+      const angle = progress * Math.PI * 10 + (this.auto ? time / 40 : 0);
       const { ctx } = this.ctx;
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(angle);
-      ctx.fillStyle = "#ff66aa";
+      ctx.strokeStyle = MODE_COLOR;
+      ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.lineTo(r, 0);
-      ctx.lineWidth = 6;
-      ctx.strokeStyle = "#ff66aa";
       ctx.stroke();
       ctx.restore();
     }
 
     drawText(this.ctx, "SPIN", cx, cy, {
-      font: "bold 20px system-ui",
-      fillStyle: "rgba(255,255,255,0.5)",
-    });
-  }
-
-  private drawHUD(): void {
-    const score = this.score;
-    const { width } = this.ctx;
-    // 顶部：分数 / 准确率 / 连击
-    drawText(this.ctx, `${Math.round(score.score).toLocaleString()}`, width / 2, 28, {
-      font: "bold 22px system-ui",
-      fillStyle: "#fff",
+      font: `900 20px ${GAME_FONT}`,
+      fillStyle: "rgba(255,255,255,0.55)",
       align: "center",
+      baseline: "middle",
     });
-    drawText(this.ctx, `${score.accuracy.toFixed(2)}%`, width - 16, 28, {
-      font: "600 14px system-ui",
-      fillStyle: "rgba(255,255,255,0.7)",
-      align: "right",
-    });
-    if (score.combo > 0) {
-      drawText(this.ctx, `${score.combo}x`, 16, 28, {
-        font: "bold 18px system-ui",
-        fillStyle: "var(--accent)",
-        align: "left",
-      });
-    }
   }
 
   public onPointerDown(x: number, y: number): void {
     if (this.status !== "playing") return;
-    const time = this.getCurrentTime();
-    // 查找最近的未判定 circle/slider
+    const time = this.currentTime;
     let best: HitObject | null = null;
-    let bestDelta = Infinity;
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged) continue;
-      if (obj.type === "spinner") continue;
-      const dx = this.toCanvasX(obj.x) - x;
-      const dy = this.toCanvasY(obj.y) - y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > this.radius * 1.5) continue;
+    let bestScore = Infinity;
+    const len = this.beatmap.hitObjects.length;
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = this.beatmap.hitObjects[i];
+      if (obj.judged || obj.type === "spinner") continue;
+      const p = this.toCanvas(obj.x, obj.y);
+      const dist = Math.hypot(p.x - x, p.y - y);
+      if (dist > this.radius * 1.35) continue;
       const delta = Math.abs(time - obj.time);
-      if (delta < bestDelta) {
-        bestDelta = delta;
+      if (delta > this.windows["50"]) continue;
+      const score = dist + delta * 0.1;
+      if (score < bestScore) {
+        bestScore = score;
         best = obj;
       }
+      if (obj.time - time > this.preempt) break;
     }
     if (best) {
-      this.judgeHit(best, time);
+      const j = this.judgeHit(best, time);
+      const p = this.toCanvas(best.x, best.y);
+      this.spawnHitEffect(p.x, p.y, j, time);
+      if (best.type === "slider") best._sliderHit = true;
     }
   }
 
   public onPointerMove = (x: number, y: number): void => {
-    this.activePointer = { x, y, t: this.getCurrentTime() };
+    this.lastPointer = { x, y };
   };
 
   public onPointerUp = (): void => {
-    this.activePointer = null;
+    this.lastPointer = null;
   };
 
   public onKeyDown(key: string): void {
-    // 桌面端：X / 鼠标点击都触发判定，这里复用 pointerDown 逻辑
-    if (key === "x" || key === "X") {
-      // 取屏幕中心点击
-      this.onPointerDown(this.ctx.width / 2, this.ctx.height / 2);
+    if (key === "x" || key === "X" || key === "z" || key === "Z") {
+      if (this.lastPointer) this.onPointerDown(this.lastPointer.x, this.lastPointer.y);
+      else this.onPointerDown(this.ctx.width / 2, this.ctx.height / 2);
     }
   }
 
