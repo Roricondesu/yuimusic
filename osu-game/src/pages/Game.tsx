@@ -13,10 +13,14 @@ type Phase = "loading" | "ready" | "playing" | "paused" | "finished";
 export default function Game() {
   const { setId, mode, diff } = useParams<{ setId: string; mode: string; diff: string }>();
   const navigate = useNavigate();
-  const gameMode = (mode || "standard") as GameMode;
   const isLandscape = useOrientation();
 
   const downloaded = useGameStore((s) => s.downloaded);
+  const set = setId ? downloaded.get(Number(setId)) : undefined;
+  const beatmap = set?.beatmaps.find((b) => String(b.id) === diff) || set?.beatmaps[0];
+  // 优先以谱面文件自身声明的 mode 为准，避免 URL/缓存中的 mode 错误
+  const gameMode = (beatmap?.parsed?.mode || mode || "standard") as GameMode;
+
   const volume = useGameStore((s) => s.settings.volume);
   const offset = useGameStore((s) => s.settings.offset);
   const auto = useGameStore((s) => s.settings.auto);
@@ -34,14 +38,11 @@ export default function Game() {
 
   // 加载谱面 + 创建引擎
   useEffect(() => {
-    if (!setId) return;
-    const set = downloaded.get(Number(setId));
-    if (!set) {
+    if (!setId || !set) {
       setErrorMsg("谱面未下载，请先返回详情页下载");
       setPhase("loading");
       return;
     }
-    const beatmap = set.beatmaps.find((b) => String(b.id) === diff) || set.beatmaps[0];
     if (!beatmap?.parsed) {
       setErrorMsg("谱面数据损坏");
       return;
@@ -96,7 +97,7 @@ export default function Game() {
       engineRef.current?.destroy();
       engineRef.current = null;
     };
-  }, [setId, diff, gameMode, isLandscape, auto, showCursor]);
+  }, [set, beatmap, gameMode, isLandscape, auto, showCursor]);
 
   // 同步音量
   useEffect(() => {

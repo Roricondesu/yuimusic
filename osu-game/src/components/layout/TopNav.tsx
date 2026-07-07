@@ -2,12 +2,13 @@ import React from "react";
 import { useGameStore } from "@/store/useGameStore";
 import { useTheme } from "@/hooks/useTheme";
 import { useLocation } from "react-router-dom";
-import { Home, Search, Settings, Music2 } from "lucide-react";
+import { Home, Search, Settings, Music2, HardDrive } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const NAV_ITEMS = [
   { to: "/", icon: Home, label: "首页" },
   { to: "/search", icon: Search, label: "搜索" },
+  { to: "/downloads", icon: HardDrive, label: "下载" },
   { to: "/settings", icon: Settings, label: "设置" },
 ];
 

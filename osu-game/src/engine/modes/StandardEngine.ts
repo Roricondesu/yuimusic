@@ -31,6 +31,8 @@ interface CachedObj {
   sliderDuration: number;
 }
 
+type SliderEvalResult = { x: number; y: number; segmentIndex: number; segmentT: number };
+
 export class StandardEngine extends GameEngine {
   private scale = 1;
   private offsetX = 0;
@@ -316,7 +318,7 @@ export class StandardEngine extends GameEngine {
     const { ctx } = this.ctx;
     const sd = c.sliderDuration || 1;
     const slides = obj.slides || 1;
-    let ballPos: { x: number; y: number } | null = null;
+    let ballPos: SliderEvalResult | null = null;
     if (started && !ended) {
       const progressRaw = (time - obj.time) / sd;
       const slideIdx = Math.floor(progressRaw * slides);
@@ -352,14 +354,24 @@ export class StandardEngine extends GameEngine {
     // 内芯轨道
     drawPath(r * 1.55, hexToRgba(color, 0.55));
 
-    // 已滑过部分高亮
+    // 已滑过部分高亮（沿实际路径）
     if (ballPos) {
       ctx.save();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
-      ctx.lineTo(ballPos.x, ballPos.y);
+      for (let i = 1; i <= ballPos.segmentIndex + 1; i++) {
+        if (i >= pts.length) break;
+        if (i === ballPos.segmentIndex + 1) {
+          const a = pts[i - 1];
+          const b = pts[i];
+          const k = ballPos.segmentT;
+          ctx.lineTo(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k);
+        } else {
+          ctx.lineTo(pts[i].x, pts[i].y);
+        }
+      }
       ctx.lineWidth = r * 1.25;
       ctx.strokeStyle = hexToRgba("#fff", 0.5);
       ctx.shadowColor = color;
@@ -444,20 +456,25 @@ export class StandardEngine extends GameEngine {
     ctx.restore();
   }
 
-  private evalSliderPos(pts: { x: number; y: number }[], t: number): { x: number; y: number } {
-    if (pts.length === 1) return pts[0];
+  private evalSliderPos(pts: { x: number; y: number }[], t: number): SliderEvalResult {
+    if (pts.length === 1) return { ...pts[0], segmentIndex: 0, segmentT: 0 };
     const totalLen = pts.reduce((sum, p, i) => i === 0 ? 0 : sum + Math.hypot(p.x - pts[i-1].x, p.y - pts[i-1].y), 0);
-    if (totalLen === 0) return pts[0];
+    if (totalLen === 0) return { ...pts[0], segmentIndex: 0, segmentT: 0 };
     let target = totalLen * clamp(t, 0, 1);
     for (let i = 1; i < pts.length; i++) {
       const segLen = Math.hypot(pts[i].x - pts[i-1].x, pts[i].y - pts[i-1].y);
       if (target <= segLen) {
         const k = segLen === 0 ? 0 : target / segLen;
-        return { x: pts[i-1].x + (pts[i].x - pts[i-1].x) * k, y: pts[i-1].y + (pts[i].y - pts[i-1].y) * k };
+        return {
+          x: pts[i-1].x + (pts[i].x - pts[i-1].x) * k,
+          y: pts[i-1].y + (pts[i].y - pts[i-1].y) * k,
+          segmentIndex: i - 1,
+          segmentT: k,
+        };
       }
       target -= segLen;
     }
-    return pts[pts.length - 1];
+    return { ...pts[pts.length - 1], segmentIndex: pts.length - 2, segmentT: 1 };
   }
 
   private drawSpinner(obj: HitObject, time: number): void {

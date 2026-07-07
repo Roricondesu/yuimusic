@@ -16,6 +16,7 @@ import {
   downloadOsz as apiDownloadOsz,
 } from "@/api/osuDirect";
 import { extractOsz } from "@/utils/oszLoader";
+import { saveDownload, loadAllDownloads, deleteDownload, clearAllDownloads } from "@/utils/indexedDb";
 
 const EMPTY_RUNTIME: GameRuntime = {
   setId: 0,
@@ -54,7 +55,10 @@ interface GameState {
   downloaded: Map<number, LoadedBeatmapSet>;
   downloadProgress: number; // 0-1
   downloadError: string | null;
-  downloadSet: (set: BeatmapSet) => Promise<LoadedBeatmapSet | null>;
+  downloadSet: (set: BeatmapSet, force?: boolean) => Promise<LoadedBeatmapSet | null>;
+  deleteDownload: (setId: number) => Promise<void>;
+  clearDownloads: () => Promise<void>;
+  loadDownloads: () => Promise<void>;
 
   // 游戏
   runtime: GameRuntime;
@@ -142,9 +146,9 @@ export const useGameStore = create<GameState>()(
       downloaded: new Map(),
       downloadProgress: 0,
       downloadError: null,
-      downloadSet: async (set_) => {
+      downloadSet: async (set_, force = false) => {
         const cached = get().downloaded.get(set_.id);
-        if (cached) {
+        if (cached && !force) {
           set({ downloadProgress: 1 });
           return cached;
         }
@@ -164,6 +168,7 @@ export const useGameStore = create<GameState>()(
             downloaded: new Map(s.downloaded).set(set_.id, loaded),
             downloadProgress: 1,
           }));
+          await saveDownload(loaded);
           return loaded;
         } catch (e) {
           set({
@@ -171,6 +176,27 @@ export const useGameStore = create<GameState>()(
             downloadProgress: 0,
           });
           return null;
+        }
+      },
+      deleteDownload: async (setId) => {
+        await deleteDownload(setId);
+        set((s) => {
+          const next = new Map(s.downloaded);
+          next.delete(setId);
+          return { downloaded: next };
+        });
+      },
+      clearDownloads: async () => {
+        await clearAllDownloads();
+        set({ downloaded: new Map() });
+      },
+      loadDownloads: async () => {
+        try {
+          const map = await loadAllDownloads();
+          set({ downloaded: map });
+        } catch (e) {
+          // IndexedDB 不可用时不阻断应用
+          console.warn("加载本地下载失败", e);
         }
       },
 
