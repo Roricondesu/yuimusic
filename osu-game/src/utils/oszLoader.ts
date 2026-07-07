@@ -44,7 +44,8 @@ const extractBeatmapSet = async (
         baseSet.beatmaps.find((b) => b.version === p.title) ||
         baseSet.beatmaps[0];
       if (matched) {
-        parsed.push({ beatmap: { ...matched, parsed: p }, parsed: p });
+        // 以 .osu 文件内 Mode 字段为准（API 返回的 mode 偶尔不可靠）
+        parsed.push({ beatmap: { ...matched, mode: ["standard", "taiko", "catch", "mania"].indexOf(p.mode), parsed: p }, parsed: p });
       } else {
         // 没匹配上，构造一个新的 Beatmap
         parsed.push({

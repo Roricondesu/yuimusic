@@ -173,11 +173,12 @@ export class StandardEngine extends GameEngine {
     const win300 = this.windows["300"];
     let targetX = this.cursorTargetX;
     let targetY = this.cursorTargetY;
+
     for (let i = this.activeIndex; i < len; i++) {
       const obj = objs[i];
       if (obj.judged) continue;
       const delta = time - obj.time;
-      if (delta < -win300) break;
+      if (delta < -win300 && obj.type !== "slider") break;
 
       if (obj.type === "spinner") {
         const cx = this.ctx.width / 2, cy = this.ctx.height / 2;
@@ -195,15 +196,34 @@ export class StandardEngine extends GameEngine {
       const p = this.toCanvas(obj.x, obj.y);
       targetX = p.x;
       targetY = p.y;
-      if (delta <= win300) {
-        if (obj.type === "slider") {
-          // auto 模式下持续跟随滑条直到结束
+
+      if (obj.type === "slider") {
+        const c = this.cached[i];
+        const pts = c.canvasPoints;
+        if (time >= obj.time && time <= (obj.endTime || obj.time) && pts.length >= 2) {
+          // auto 跟随滑条球
+          const sd = c.sliderDuration || 1;
+          const slides = obj.slides || 1;
+          const progressRaw = (time - obj.time) / sd;
+          const slideIdx = Math.floor(progressRaw * slides);
+          if (slideIdx < slides) {
+            const localT = (progressRaw * slides) % 1;
+            const t = slideIdx % 2 === 0 ? localT : 1 - localT;
+            const pos = this.evalSliderPos(pts, t);
+            targetX = pos.x;
+            targetY = pos.y;
+          }
+        }
+        if (!obj._sliderHit && delta >= -win300 && delta <= win300) {
           obj._sliderHit = true;
           obj.judged = false;
           this.spawnHitEffect(p.x, p.y, "300", time);
-        } else {
-          this.judgeHit(obj, time);
         }
+        break;
+      }
+
+      if (delta <= win300) {
+        this.judgeHit(obj, time);
         this.spawnHitEffect(p.x, p.y, "300", time);
       }
       break;
@@ -285,6 +305,7 @@ export class StandardEngine extends GameEngine {
     const r = this.radius;
     const timeUntil = obj.time - time;
     const started = time >= obj.time;
+    const ended = time > (obj.endTime || obj.time);
 
     if (pts.length < 2) {
       // 退化成普通圆
@@ -292,27 +313,67 @@ export class StandardEngine extends GameEngine {
       return;
     }
 
-    // 轨道
     const { ctx } = this.ctx;
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
-    ctx.lineWidth = r * 2;
-    ctx.strokeStyle = hexToRgba(color, 0.32);
-    ctx.stroke();
-    ctx.lineWidth = r * 1.7;
-    ctx.strokeStyle = hexToRgba(color, GLASS_ALPHA);
-    ctx.stroke();
-    ctx.restore();
+    const sd = c.sliderDuration || 1;
+    const slides = obj.slides || 1;
+    let ballPos: { x: number; y: number } | null = null;
+    if (started && !ended) {
+      const progressRaw = (time - obj.time) / sd;
+      const slideIdx = Math.floor(progressRaw * slides);
+      if (slideIdx < slides) {
+        const localT = (progressRaw * slides) % 1;
+        const t = slideIdx % 2 === 0 ? localT : 1 - localT;
+        ballPos = this.evalSliderPos(pts, t);
+      }
+    }
 
-    // 头部圆 - 半透明毛玻璃
-    drawGlassCircle(this.ctx, pts[0].x, pts[0].y, r, hexToRgba(color, GLASS_ALPHA), "rgba(255,255,255,0.7)", 2);
-    drawCircle(this.ctx, pts[0].x, pts[0].y, r * 0.12, "rgba(255,255,255,0.9)");
+    // 绘制整条路径（闭路复用）
+    const drawPath = (lineWidth: number, strokeStyle: string, shadow = false) => {
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.lineWidth = lineWidth;
+      ctx.strokeStyle = strokeStyle;
+      if (shadow) {
+        ctx.shadowColor = "rgba(0,0,0,0.5)";
+        ctx.shadowBlur = 10;
+      }
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    // 外阴影轨道
+    drawPath(r * 2.35, "rgba(0,0,0,0.35)", true);
+    // 底色轨道
+    drawPath(r * 2.0, hexToRgba(color, 0.22));
+    // 内芯轨道
+    drawPath(r * 1.55, hexToRgba(color, 0.55));
+
+    // 已滑过部分高亮
+    if (ballPos) {
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(ballPos.x, ballPos.y);
+      ctx.lineWidth = r * 1.25;
+      ctx.strokeStyle = hexToRgba("#fff", 0.5);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 头部圆
+    drawGlassCircle(this.ctx, pts[0].x, pts[0].y, r, hexToRgba(color, GLASS_ALPHA), "rgba(255,255,255,0.85)", 2);
+    drawCircle(this.ctx, pts[0].x, pts[0].y, r * 0.55, hexToRgba(color, 0.55));
+    drawCircle(this.ctx, pts[0].x, pts[0].y, r * 0.12, "rgba(255,255,255,0.95)");
     drawText(this.ctx, String(c.comboNumber), pts[0].x, pts[0].y - 1, {
-      font: `800 ${Math.max(12, Math.round(r * 0.85))}px ${GAME_FONT}`,
+      font: `800 ${Math.max(12, Math.round(r * 0.8))}px ${GAME_FONT}`,
       fillStyle: "rgba(255,255,255,0.95)",
       align: "center",
       baseline: "middle",
@@ -320,30 +381,67 @@ export class StandardEngine extends GameEngine {
 
     // 尾部圆
     const tail = pts[pts.length - 1];
-    drawGlassCircle(this.ctx, tail.x, tail.y, r, hexToRgba(color, 0.25), "rgba(255,255,255,0.4)", 2);
+    drawGlassCircle(this.ctx, tail.x, tail.y, r * 0.82, hexToRgba(color, 0.28), "rgba(255,255,255,0.45)", 1.5);
+
+    // 反向箭头（多 slide 时在尾部）
+    if (slides > 1 && !ended) {
+      this.drawReverseArrow(tail, pts[pts.length - 2] || pts[0], r, color, time);
+    }
 
     // approach circle
     if (timeUntil > 0) {
       const approachT = clamp(1 - timeUntil / this.preempt, 0, 1);
       if (approachT < 1) {
-        const ar = r * (4 - 3 * approachT);
-        drawRing(this.ctx, pts[0].x, pts[0].y, ar, hexToRgba(color, 0.65), 2);
+        const ar = r * (3.8 - 2.8 * approachT);
+        ctx.save();
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 10;
+        drawRing(this.ctx, pts[0].x, pts[0].y, ar, hexToRgba(color, 0.7), 2.5);
+        ctx.restore();
       }
     }
 
-    // 滑条球
-    if (started) {
-      const sd = c.sliderDuration || 1;
-      const slides = obj.slides || 1;
-      const progressRaw = (time - obj.time) / sd;
-      const slideIdx = Math.floor(progressRaw * slides);
-      if (slideIdx < slides) {
-        const localT = (progressRaw * slides) % 1;
-        const t = slideIdx % 2 === 0 ? localT : 1 - localT;
-        const pos = this.evalSliderPos(pts, t);
-        drawCircle(this.ctx, pos.x, pos.y, r * 0.55, "rgba(255,255,255,0.95)", color, 3);
-      }
+    // 滑条球 + 拖尾
+    if (ballPos) {
+      const { x: bx, y: by } = ballPos;
+      // 外发光
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(bx, by, r * 0.85, 0, Math.PI * 2);
+      ctx.fillStyle = hexToRgba(color, 0.28);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 22;
+      ctx.fill();
+      ctx.restore();
+      // 主体
+      drawCircle(this.ctx, bx, by, r * 0.48, "rgba(255,255,255,0.95)", color, 2.5);
+      // 核心
+      drawCircle(this.ctx, bx, by, r * 0.22, "#fff");
     }
+  }
+
+  private drawReverseArrow(tail: { x: number; y: number }, prev: { x: number; y: number }, r: number, color: string, time: number): void {
+    const { ctx } = this.ctx;
+    const dx = tail.x - prev.x;
+    const dy = tail.y - prev.y;
+    const angle = Math.atan2(dy, dx);
+    const size = r * 0.7;
+    const pulse = 1 + Math.sin(time / 80) * 0.08;
+    ctx.save();
+    ctx.translate(tail.x, tail.y);
+    ctx.rotate(angle);
+    ctx.scale(pulse, pulse);
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.5, -size * 0.5);
+    ctx.lineTo(size * 0.5, 0);
+    ctx.lineTo(-size * 0.5, size * 0.5);
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(color, 0.85);
+    ctx.strokeStyle = "rgba(255,255,255,0.8)";
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   private evalSliderPos(pts: { x: number; y: number }[], t: number): { x: number; y: number } {

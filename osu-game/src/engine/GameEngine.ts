@@ -15,7 +15,7 @@ import {
   type JudgementWindows,
 } from "./Judger";
 import type { CanvasContext } from "./renderer/Canvas2D";
-import { setupCanvas, clear, drawText, GAME_FONT } from "./renderer/Canvas2D";
+import { setupCanvas, clear, drawText, GAME_FONT, clamp } from "./renderer/Canvas2D";
 
 interface HitEffect {
   x: number;
@@ -372,64 +372,130 @@ export abstract class GameEngine {
     }
   }
 
-  /** 统一 HUD（扁平现代） */
+  /** 统一 HUD（精致现代） */
   protected drawHUD(opts?: { comboColor?: string; modeLabel?: string; modeColor?: string }): void {
-    const { ctx, width } = this.ctx;
+    const { ctx, width, height } = this.ctx;
     const s = this.score;
     const comboColor = opts?.comboColor || "#fff";
+    const modeColor = opts?.modeColor || "#fff";
 
     // 顶部毛玻璃条
     ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.22)";
-    ctx.fillRect(0, 0, width, 48);
-    ctx.fillStyle = "rgba(255,255,255,0.06)";
-    ctx.fillRect(0, 0, width, 1);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.beginPath();
+    ctx.roundRect(12, 10, width - 24, 52, 16);
+    ctx.fill();
+    // 顶部高光边
+    ctx.strokeStyle = "rgba(255,255,255,0.1)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.restore();
 
     // 分数
-    drawText(this.ctx, Math.round(s.score).toLocaleString(), width / 2, 28, {
-      font: `900 22px ${GAME_FONT}`,
+    ctx.save();
+    ctx.shadowColor = "rgba(0,0,0,0.6)";
+    ctx.shadowBlur = 8;
+    drawText(this.ctx, Math.round(s.score).toLocaleString(), width / 2, 36, {
+      font: `900 24px ${GAME_FONT}`,
       fillStyle: "#fff",
       align: "center",
       baseline: "middle",
     });
+    ctx.restore();
 
     // 准确率
-    drawText(this.ctx, `${s.accuracy.toFixed(2)}%`, width - 16, 28, {
-      font: `700 14px ${GAME_FONT}`,
-      fillStyle: "rgba(255,255,255,0.72)",
+    drawText(this.ctx, `${s.accuracy.toFixed(2)}%`, width - 30, 36, {
+      font: `700 15px ${GAME_FONT}`,
+      fillStyle: "rgba(255,255,255,0.85)",
       align: "right",
       baseline: "middle",
     });
 
     // combo
     if (s.combo > 0) {
-      drawText(this.ctx, `${s.combo}x`, 16, 28, {
-        font: `900 18px ${GAME_FONT}`,
+      ctx.save();
+      ctx.shadowColor = comboColor;
+      ctx.shadowBlur = 12;
+      drawText(this.ctx, `${s.combo}x`, 30, 36, {
+        font: `900 20px ${GAME_FONT}`,
         fillStyle: comboColor,
         align: "left",
         baseline: "middle",
       });
+      ctx.restore();
+    }
+
+    // 血条
+    const barY = 70;
+    const barW = Math.min(220, width * 0.5);
+    const barX = (width - barW) / 2;
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, 6, 3);
+    ctx.fill();
+    const hp = clamp(s.health / 100, 0, 1);
+    const hpColor = hp > 0.5 ? "#4ade80" : hp > 0.25 ? "#facc15" : "#ff375f";
+    ctx.fillStyle = hpColor;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * hp, 6, 3);
+    ctx.fill();
+    ctx.shadowColor = hpColor;
+    ctx.shadowBlur = 6;
+    ctx.fill();
+    ctx.restore();
+
+    // 判定计数（彩色药丸）
+    const j = s.judgements;
+    const counts: { label: string; value: number; color: string }[] = [
+      { label: "P", value: j["300"], color: "#66cc44" },
+      { label: "G", value: j["100"], color: "#0a84ff" },
+      { label: "GO", value: j["50"], color: "#ff9100" },
+      { label: "X", value: j.miss, color: "#ff375f" },
+    ];
+    const pillH = 22;
+    const pillGap = 8;
+    let px = width - 14;
+    const py = 92;
+    for (let i = counts.length - 1; i >= 0; i--) {
+      const item = counts[i];
+      ctx.font = `800 11px ${GAME_FONT}`;
+      const textW = ctx.measureText(`${item.label} ${item.value}`).width;
+      const pillW = textW + 18;
+      px -= pillW;
+      ctx.save();
+      ctx.fillStyle = `${item.color}22`;
+      ctx.strokeStyle = `${item.color}66`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(px, py, pillW, pillH, 11);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = item.color;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`${item.label} ${item.value}`, px + pillW / 2, py + pillH / 2 + 1);
+      ctx.restore();
+      px -= pillGap;
     }
 
     // 模式标签
-    if (opts?.modeLabel && opts.modeColor) {
-      drawText(this.ctx, opts.modeLabel, 16, this.ctx.height - 20, {
-        font: `800 12px ${GAME_FONT}`,
-        fillStyle: opts.modeColor,
-        align: "left",
-        baseline: "middle",
-      });
+    if (opts?.modeLabel) {
+      ctx.save();
+      ctx.fillStyle = `${modeColor}22`;
+      ctx.strokeStyle = `${modeColor}55`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(14, height - 42, 78, 26, 13);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = modeColor;
+      ctx.font = `800 12px ${GAME_FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(opts.modeLabel, 53, height - 29);
+      ctx.restore();
     }
-
-    // 判定计数（小）
-    const j = s.judgements;
-    const jx = width - 12;
-    const jy = 66;
-    drawText(this.ctx, `${j["300"]}`, jx, jy, { font: `700 12px ${GAME_FONT}`, fillStyle: "#66cc44", align: "right" });
-    drawText(this.ctx, `${j["100"]}`, jx, jy + 16, { font: `700 12px ${GAME_FONT}`, fillStyle: "#0a84ff", align: "right" });
-    drawText(this.ctx, `${j["50"]}`, jx, jy + 32, { font: `700 12px ${GAME_FONT}`, fillStyle: "#ff9100", align: "right" });
-    drawText(this.ctx, `${j.miss}`, jx, jy + 48, { font: `700 12px ${GAME_FONT}`, fillStyle: "#ff375f", align: "right" });
   }
 
   /** 清屏并绘制基础背景 */
