@@ -5,7 +5,7 @@
  */
 import type { HitObject, ParsedBeatmap } from "@/types";
 import { GameEngine } from "../GameEngine";
-import { drawCircle, drawRect, drawText, hexToRgba } from "../renderer/Canvas2D";
+import { drawCircle, drawRect, drawText, GAME_FONT, hexToRgba } from "../renderer/Canvas2D";
 
 const NOTE_R = 32;
 const JUDGE_X_RATIO = 0.18; // 判定圈位置（屏幕宽度的 18%）
@@ -115,17 +115,17 @@ export class TaikoEngine extends GameEngine {
   private drawHUD(): void {
     const score = this.score;
     drawText(this.ctx, `${Math.round(score.score).toLocaleString()}`, this.ctx.width / 2, 28, {
-      font: "bold 22px system-ui",
+      font: `bold 22px ${GAME_FONT}`,
       fillStyle: "#fff",
     });
     drawText(this.ctx, `${score.accuracy.toFixed(2)}%`, this.ctx.width - 16, 28, {
-      font: "600 14px system-ui",
+      font: `600 14px ${GAME_FONT}`,
       fillStyle: "rgba(255,255,255,0.7)",
       align: "right",
     });
     if (score.combo > 0) {
       drawText(this.ctx, `${score.combo}x`, this.judgeX, this.cy - NOTE_R - 24, {
-        font: "bold 18px system-ui",
+        font: `bold 18px ${GAME_FONT}`,
         fillStyle: "#ffaa00",
       });
     }

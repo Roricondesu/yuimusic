@@ -93,6 +93,8 @@ export const drawRect = (
   }
 };
 
+export const GAME_FONT = '"Code Pro", "SF Mono", ui-monospace, monospace';
+
 /** 绘制文本（居中） */
 export const drawText = (
   c: CanvasContext,
@@ -107,7 +109,7 @@ export const drawText = (
   } = {},
 ) => {
   const { ctx } = c;
-  ctx.font = opts.font || "14px -apple-system, system-ui, sans-serif";
+  ctx.font = opts.font || `14px ${GAME_FONT}`;
   ctx.fillStyle = opts.fillStyle || "#fff";
   ctx.textAlign = opts.align || "center";
   ctx.textBaseline = opts.baseline || "middle";

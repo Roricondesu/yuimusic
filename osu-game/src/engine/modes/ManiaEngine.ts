@@ -4,12 +4,13 @@
  *  - 列数 = CircleSize（默认 4 列）
  */
 import type { HitObject, ParsedBeatmap } from "@/types";
-import { GameEngine } from "../GameEngine";
-import { drawCircle, drawRect, drawText, hexToRgba } from "../renderer/Canvas2D";
+import { GameEngine, type EngineCallbacks } from "../GameEngine";
+import { drawRect, drawText, GAME_FONT, hexToRgba, clamp } from "../renderer/Canvas2D";
 
 const APPROACH_TIME = 1500; // 音符提前 1.5s 出现
 const NOTE_H = 16;
 const JUDGE_LINE_OFFSET = 80; // 距底部 80px
+const AUTO_WINDOW = 300; // 自动模式击打窗口 ±300ms
 const KEY_MAP: Record<number, string[]> = {
   1: ["d"],
   2: ["f", "j"],
@@ -30,24 +31,40 @@ export class ManiaEngine extends GameEngine {
   private judgeY = 0;
   private heldCols: Set<number> = new Set();
   private keyMap: string[] = [];
+  /** 当前正在长按的音符：列 -> 物件 */
+  private holding: Map<number, HitObject> = new Map();
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
     audio: HTMLAudioElement;
     beatmap: ParsedBeatmap;
     offset?: number;
-    callbacks?: import("../GameEngine").EngineCallbacks;
+    isLandscape?: boolean;
+    callbacks?: EngineCallbacks;
+    backgroundUrl?: string;
+    auto?: boolean;
+    showCursor?: boolean;
   }) {
     super(opts);
-    this.cols = Math.max(1, Math.round(opts.beatmap.cs));
-    this.cols = Math.min(Math.max(this.cols, 1), 10);
+    this.cols = clamp(Math.round(opts.beatmap.cs), 1, 10);
     this.keyMap = KEY_MAP[this.cols] || KEY_MAP[4];
+    this.computeLayout();
+  }
+
+  protected onLayoutChange(): void {
+    this.computeLayout();
+  }
+
+  protected resetState(): void {
+    super.resetState();
+    this.heldCols.clear();
+    this.holding.clear();
     this.computeLayout();
   }
 
   private computeLayout(): void {
     const { width, height } = this.ctx;
-    // 列总宽：屏幕宽度的 50%，居中
+    // 列总宽：屏幕宽度的 60%，居中，最大 600px
     const totalW = Math.min(width * 0.6, 600);
     this.colWidth = totalW / this.cols;
     this.startX = (width - totalW) / 2;
@@ -58,37 +75,167 @@ export class ManiaEngine extends GameEngine {
     return this.startX + (col + 0.5) * this.colWidth;
   }
 
-  private noteY(obj: HitObject, time: number): number {
-    const dt = obj.time - time;
-    return this.judgeY - dt / APPROACH_TIME * (this.judgeY - 20);
+  private noteY(noteTime: number, time: number): number {
+    const dt = noteTime - time;
+    return this.judgeY - (dt / APPROACH_TIME) * (this.judgeY - 20);
+  }
+
+  private isHolding(obj: HitObject): boolean {
+    for (const held of this.holding.values()) {
+      if (held === obj) return true;
+    }
+    return false;
   }
 
   protected update(time: number): void {
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged) continue;
-      const delta = time - obj.time;
-      // miss 判定
-      if (delta > this.windows["50"]) {
-        // 长按音符需检查 release
-        if (obj.type === "hold" && obj.endTime && time < obj.endTime) {
-          // 还在 hold 中，不 miss
-          continue;
-        }
-        obj.judged = true;
-        obj.judgement = "miss";
-        this.submitJudgement("miss");
+    this.advanceActiveIndex(time);
+
+    // 自动模式：每帧先清空 heldCols，避免列光效卡住
+    if (this.auto) {
+      this.heldCols.clear();
+      this.autoPlay(time);
+    }
+
+    // 处理长按音符：保持按住状态，到 endTime 判定 300
+    const completed: number[] = [];
+    for (const [col, obj] of this.holding.entries()) {
+      if (!obj.endTime) continue;
+      this.heldCols.add(col);
+      if (time >= obj.endTime) {
+        completed.push(col);
       }
     }
+    for (const col of completed) {
+      const obj = this.holding.get(col);
+      if (!obj || !obj.endTime) continue;
+      const j = this.judgeHit(obj, obj.endTime);
+      this.spawnHitEffect(this.colX(col), this.judgeY, j, time);
+      this.holding.delete(col);
+    }
+
+    // 超时未处理 / 提前释放 → miss
+    for (let i = this.activeIndex; i < this.beatmap.hitObjects.length; i++) {
+      const obj = this.beatmap.hitObjects[i];
+      if (obj.judged) continue;
+
+      if (obj.type === "hold" && obj.endTime) {
+        if (this.isHolding(obj)) continue;
+        if (time > obj.time + this.windows["50"]) {
+          this.missObject(obj, time);
+        }
+      } else {
+        if (time - obj.time > this.windows["50"]) {
+          this.missObject(obj, time);
+        }
+      }
+    }
+
+    this.pruneHitEffects(time);
+  }
+
+  private autoPlay(time: number): void {
+    for (let col = 0; col < this.cols; col++) {
+      // 保持正在长按的列发光
+      const heldObj = this.holding.get(col);
+      if (heldObj && heldObj.endTime && time < heldObj.endTime) {
+        this.heldCols.add(col);
+        continue;
+      }
+
+      let best: HitObject | null = null;
+      let bestDelta = Infinity;
+
+      for (const obj of this.beatmap.hitObjects) {
+        if (obj.judged) continue;
+        if ((obj.column ?? 0) !== col) continue;
+        if (this.isHolding(obj)) continue;
+
+        const delta = Math.abs(time - obj.time);
+        if (delta > AUTO_WINDOW) continue;
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          best = obj;
+        }
+      }
+
+      if (best) {
+        this.tryHit(col, time, AUTO_WINDOW);
+        this.cursorTargetX = this.colX(col);
+        this.cursorTargetY = this.judgeY - 40;
+      }
+    }
+  }
+
+  private tryHit(col: number, time: number, windowMs: number): void {
+    let best: HitObject | null = null;
+    let bestDelta = Infinity;
+
+    for (const obj of this.beatmap.hitObjects) {
+      if (obj.judged) continue;
+      if ((obj.column ?? 0) !== col) continue;
+      if (this.isHolding(obj)) continue;
+
+      const delta = Math.abs(time - obj.time);
+      if (delta > windowMs) continue;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = obj;
+      }
+    }
+
+    if (!best) return;
+
+    if (best.type === "hold" && best.endTime) {
+      this.holding.set(col, best);
+      this.heldCols.add(col);
+    } else {
+      const j = this.judgeHit(best, time);
+      this.spawnHitEffect(this.colX(col), this.judgeY, j, time);
+    }
+  }
+
+  private releaseHold(col: number, time: number): void {
+    const obj = this.holding.get(col);
+    if (!obj) return;
+
+    this.holding.delete(col);
+    this.heldCols.delete(col);
+
+    if (obj.judged) return;
+
+    if (obj.endTime && time >= obj.endTime) {
+      const j = this.judgeHit(obj, obj.endTime);
+      this.spawnHitEffect(this.colX(col), this.judgeY, j, time);
+    } else {
+      this.missObject(obj, time);
+    }
+  }
+
+  private missObject(obj: HitObject, time: number): void {
+    if (obj.judged) return;
+    obj.judged = true;
+    obj.judgement = "miss";
+    this.submitJudgement("miss");
+    this.spawnJudgePopup("miss", 0, 0, time);
   }
 
   protected render(): void {
     this.clearScreen();
     const time = this.getCurrentTime();
-    const { ctx } = this.ctx;
 
-    // 列底色
+    this.drawColumns();
+    this.drawJudgeLine();
+    this.drawNotes(time);
+    this.drawHitEffects(time);
+    this.drawJudgePopups(time);
+    this.drawKeyPanel();
+    this.drawHUD({ modeLabel: "osu!mania", modeColor: "#a78bfa" });
+  }
+
+  private drawColumns(): void {
     for (let c = 0; c < this.cols; c++) {
       const x = this.colX(c) - this.colWidth / 2;
+      // 纯色列背景
       drawRect(
         this.ctx,
         x,
@@ -97,109 +244,126 @@ export class ManiaEngine extends GameEngine {
         this.judgeY,
         c % 2 === 0 ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.02)",
       );
-      // 按下列高亮
+      // 按下时列发光（扁平）
       if (this.heldCols.has(c)) {
-        drawRect(this.ctx, x, 0, this.colWidth, this.judgeY, hexToRgba("#9966ff", 0.18));
+        drawRect(this.ctx, x, 0, this.colWidth, this.judgeY, hexToRgba("#a78bfa", 0.18));
       }
     }
+  }
 
-    // 判定线
+  private drawJudgeLine(): void {
     drawRect(this.ctx, this.startX, this.judgeY - 2, this.colWidth * this.cols, 4, "rgba(255,255,255,0.7)");
+  }
 
-    // 绘制音符
+  private drawNotes(time: number): void {
+    const H = this.ctx.height;
+
     for (const obj of this.beatmap.hitObjects) {
       if (obj.judged && obj.judgement !== "miss") continue;
+
       const col = obj.column ?? 0;
       if (col < 0 || col >= this.cols) continue;
+
       const dt = obj.time - time;
       if (dt > APPROACH_TIME) continue;
-      const y = this.noteY(obj, time);
+
+      const y = this.noteY(obj.time, time);
+
+      // 已越过判定线或完全超出屏幕下方则跳过
+      if (y > H + 70) break;
+      if (obj.type !== "hold" && y > this.judgeY + NOTE_H) continue;
 
       const x = this.colX(col) - this.colWidth / 2 + 4;
       const w = this.colWidth - 8;
 
       if (obj.type === "hold" && obj.endTime) {
-        // 长按音符
-        const endY = this.noteY({ ...obj, time: obj.endTime }, time);
+        const endY = this.noteY(obj.endTime, time);
+        if (Math.min(y, endY) > H + 70) continue;
+        if (Math.max(y, endY) < -70) continue;
+
         const minY = Math.min(y, endY);
         const h = Math.abs(endY - y);
-        drawRect(this.ctx, x, minY, w, h, hexToRgba("#9966ff", 0.85), 6);
+        // 长按体
+        drawRect(this.ctx, x, minY, w, h, hexToRgba("#a78bfa", 0.75), 6);
+        // 头
         drawRect(this.ctx, x, y - NOTE_H / 2, w, NOTE_H, "#fff", 4);
+        // 尾
+        drawRect(this.ctx, x, endY - NOTE_H / 2, w, NOTE_H, "#fff", 4);
       } else {
-        // 普通音符
+        // 普通音符：纯色圆角矩形
         drawRect(this.ctx, x, y - NOTE_H / 2, w, NOTE_H, "#fff", 4);
       }
     }
-
-    this.drawHUD();
   }
 
-  private drawHUD(): void {
-    const score = this.score;
-    drawText(this.ctx, `${Math.round(score.score).toLocaleString()}`, this.ctx.width / 2, 28, {
-      font: "bold 22px system-ui",
-      fillStyle: "#fff",
-    });
-    drawText(this.ctx, `${score.accuracy.toFixed(2)}%`, this.ctx.width - 16, 28, {
-      font: "600 14px system-ui",
-      fillStyle: "rgba(255,255,255,0.7)",
-      align: "right",
-    });
-    if (score.combo > 0) {
-      drawText(this.ctx, `${score.combo}x`, this.startX - 16, this.judgeY, {
-        font: "bold 24px system-ui",
-        fillStyle: "#9966ff",
-        align: "right",
+  private drawKeyPanel(): void {
+    const { ctx } = this.ctx;
+    const panelH = 44;
+    const y = this.ctx.height - panelH;
+    const totalW = this.colWidth * this.cols;
+
+    ctx.save();
+    // 半透明填充
+    ctx.fillStyle = "rgba(20,20,30,0.45)";
+    ctx.fillRect(this.startX, y, totalW, panelH);
+    // 边框
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(this.startX + 0.5, y + 0.5, totalW - 1, panelH - 1);
+    // 顶部微光
+    ctx.fillStyle = "rgba(255,255,255,0.08)";
+    ctx.fillRect(this.startX, y, totalW, 1);
+    ctx.restore();
+
+    // 按键提示
+    for (let c = 0; c < this.cols; c++) {
+      const label = this.keyMap[c]?.toUpperCase() ?? "";
+      drawText(this.ctx, label, this.colX(c), y + panelH / 2, {
+        font: `700 12px ${GAME_FONT}`,
+        fillStyle: "rgba(255,255,255,0.65)",
+        align: "center",
+        baseline: "middle",
       });
     }
   }
 
-  private tryHit(col: number): void {
-    if (this.status !== "playing") return;
-    const time = this.getCurrentTime();
-    let best: HitObject | null = null;
-    let bestDelta = Infinity;
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged) continue;
-      if ((obj.column ?? 0) !== col) continue;
-      const delta = Math.abs(time - obj.time);
-      if (delta > this.windows["50"]) continue;
-      if (delta < bestDelta) {
-        bestDelta = delta;
-        best = obj;
-      }
-    }
-    if (best) {
-      this.judgeHit(best, time);
-    }
+  private colFromX(x: number): number {
+    return Math.floor((x - this.startX) / this.colWidth);
   }
 
   public onPointerDown(x: number, _y: number): void {
-    if (this.status !== "playing") return;
-    // 找到点击的列
-    const col = Math.floor((x - this.startX) / this.colWidth);
+    if (this.status !== "playing" || this.auto) return;
+    const col = this.colFromX(x);
     if (col < 0 || col >= this.cols) return;
     this.heldCols.add(col);
-    this.tryHit(col);
+    this.tryHit(col, this.getCurrentTime(), this.windows["50"]);
   }
 
   public onPointerMove = (): void => {};
+
   public onPointerUp = (x: number, _y: number): void => {
-    const col = Math.floor((x - this.startX) / this.colWidth);
+    if (this.auto) return;
+    const col = this.colFromX(x);
+    if (col < 0 || col >= this.cols) return;
     this.heldCols.delete(col);
+    this.releaseHold(col, this.getCurrentTime());
   };
 
   public onKeyDown(key: string): void {
+    if (this.status !== "playing" || this.auto) return;
     const k = key.toLowerCase();
     const idx = this.keyMap.indexOf(k);
     if (idx < 0) return;
     this.heldCols.add(idx);
-    this.tryHit(idx);
+    this.tryHit(idx, this.getCurrentTime(), this.windows["50"]);
   }
 
   public onKeyUp = (key: string): void => {
+    if (this.auto) return;
     const k = key.toLowerCase();
     const idx = this.keyMap.indexOf(k);
-    if (idx >= 0) this.heldCols.delete(idx);
+    if (idx < 0) return;
+    this.heldCols.delete(idx);
+    this.releaseHold(idx, this.getCurrentTime());
   };
 }

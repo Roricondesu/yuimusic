@@ -7,7 +7,7 @@
  */
 import type { HitObject, ParsedBeatmap } from "@/types";
 import { GameEngine } from "../GameEngine";
-import { drawCircle, drawRect, drawText, hexToRgba, clamp } from "../renderer/Canvas2D";
+import { drawCircle, drawRect, drawText, GAME_FONT, hexToRgba, clamp } from "../renderer/Canvas2D";
 
 const APPROACH_TIME = 1500;
 const FRUIT_R = 22;
@@ -114,17 +114,17 @@ export class CatchEngine extends GameEngine {
   private drawHUD(): void {
     const score = this.score;
     drawText(this.ctx, `${Math.round(score.score).toLocaleString()}`, this.ctx.width / 2, 28, {
-      font: "bold 22px system-ui",
+      font: `bold 22px ${GAME_FONT}`,
       fillStyle: "#fff",
     });
     drawText(this.ctx, `${score.accuracy.toFixed(2)}%`, this.ctx.width - 16, 28, {
-      font: "600 14px system-ui",
+      font: `600 14px ${GAME_FONT}`,
       fillStyle: "rgba(255,255,255,0.7)",
       align: "right",
     });
     if (score.combo > 0) {
       drawText(this.ctx, `${score.combo}x`, 16, 28, {
-        font: "bold 18px system-ui",
+        font: `bold 18px ${GAME_FONT}`,
         fillStyle: "#66cc44",
         align: "left",
       });

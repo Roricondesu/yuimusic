@@ -2,8 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Code Pro";
+  src: url("/fonts/code-pro.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  font-family: "Code Pro", "SF Mono", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   font-synthesis: none;

@@ -15,7 +15,23 @@ import {
   type JudgementWindows,
 } from "./Judger";
 import type { CanvasContext } from "./renderer/Canvas2D";
-import { setupCanvas, clear } from "./renderer/Canvas2D";
+import { setupCanvas, clear, drawText, GAME_FONT } from "./renderer/Canvas2D";
+
+interface HitEffect {
+  x: number;
+  y: number;
+  judgement: Judgement;
+  time: number;
+}
+
+interface JudgePopup {
+  text: string;
+  color: string;
+  x: number;
+  y: number;
+  time: number;
+  scale: number;
+}
 
 export interface EngineCallbacks {
   onScoreUpdate?: (score: ScoreState) => void;
@@ -48,6 +64,10 @@ export abstract class GameEngine {
   protected backgroundImage: HTMLImageElement | null = null;
   protected backgroundLoaded = false;
   private lastFrameAt = 0;
+
+  protected activeIndex = 0;
+  protected hitEffects: HitEffect[] = [];
+  protected judgePopups: JudgePopup[] = [];
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
@@ -150,6 +170,10 @@ export abstract class GameEngine {
     this.loop();
   }
 
+  protected get currentTime(): number {
+    return this.getCurrentTime();
+  }
+
   destroy(): void {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
@@ -225,7 +249,179 @@ export abstract class GameEngine {
     obj.judged = true;
     obj.judgement = j;
     this.submitJudgement(j);
+    this.spawnJudgePopup(j, 0, 0, time);
     return j;
+  }
+
+  /** 通用：推进活动物件指针 */
+  protected advanceActiveIndex(time: number): void {
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    while (this.activeIndex < len) {
+      const obj = objs[this.activeIndex];
+      if (!obj.judged && time - (obj.endTime || obj.time) < this.windows["50"] + 200) break;
+      this.activeIndex++;
+    }
+  }
+
+  /** 通用：查找最近的命中目标 */
+  protected findHitTarget(
+    time: number,
+    filter: (obj: HitObject) => boolean,
+    scoreFn: (obj: HitObject) => number,
+  ): HitObject | null {
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    let best: HitObject | null = null;
+    let bestScore = Infinity;
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = objs[i];
+      if (obj.judged) continue;
+      if (!filter(obj)) continue;
+      const score = scoreFn(obj);
+      if (score < bestScore) {
+        bestScore = score;
+        best = obj;
+      }
+      // 超过窗口太多就停止
+      if (obj.time - time > this.windows["50"] + 200) break;
+    }
+    return best;
+  }
+
+  /** 添加命中爆点 */
+  protected spawnHitEffect(x: number, y: number, judgement: Judgement, time: number): void {
+    this.hitEffects.push({ x, y, judgement, time });
+  }
+
+  /** 添加判定文字（实际坐标由子类传入，这里用相对偏移） */
+  protected spawnJudgePopup(judgement: Judgement, x: number, y: number, time: number): void {
+    const map: Record<Judgement, { text: string; color: string; scale: number }> = {
+      "300": { text: "300", color: "#66cc44", scale: 1.1 },
+      "100": { text: "100", color: "#0a84ff", scale: 1 },
+      "50": { text: "50", color: "#ff9100", scale: 0.95 },
+      miss: { text: "MISS", color: "#ff375f", scale: 0.9 },
+    };
+    const info = map[judgement];
+    this.judgePopups.push({
+      text: info.text,
+      color: info.color,
+      x,
+      y,
+      time,
+      scale: info.scale,
+    });
+  }
+
+  /** 清理过期命中效果 */
+  protected pruneHitEffects(time: number): void {
+    this.hitEffects = this.hitEffects.filter((e) => time - e.time < 320);
+    this.judgePopups = this.judgePopups.filter((p) => time - p.time < 500);
+  }
+
+  /** 绘制命中爆点 */
+  protected drawHitEffects(time: number): void {
+    const { ctx } = this.ctx;
+    for (const e of this.hitEffects) {
+      const age = time - e.time;
+      const t = age / 320;
+      const alpha = 1 - t;
+      const r = 16 + t * 24;
+      const color = e.judgement === "miss" ? "#ff375f" : "#fff";
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /** 绘制判定 popup（子类可在 HUD 上方调用） */
+  protected drawJudgePopups(time: number): void {
+    const { ctx, width } = this.ctx;
+    const centerX = width / 2;
+    const baseY = this.ctx.height * 0.42;
+    for (const p of this.judgePopups) {
+      const age = time - p.time;
+      const t = Math.min(age / 500, 1);
+      const y = baseY - t * 30;
+      const alpha = 1 - t;
+      const scale = p.scale * (1 + t * 0.1);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(centerX, y);
+      ctx.scale(scale, scale);
+      drawText(this.ctx, p.text, 0, 0, {
+        font: `900 36px ${GAME_FONT}`,
+        fillStyle: p.color,
+        align: "center",
+        baseline: "middle",
+      });
+      ctx.restore();
+    }
+  }
+
+  /** 统一 HUD（扁平现代） */
+  protected drawHUD(opts?: { comboColor?: string; modeLabel?: string; modeColor?: string }): void {
+    const { ctx, width } = this.ctx;
+    const s = this.score;
+    const comboColor = opts?.comboColor || "#fff";
+
+    // 顶部毛玻璃条
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(0, 0, width, 48);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(0, 0, width, 1);
+    ctx.restore();
+
+    // 分数
+    drawText(this.ctx, Math.round(s.score).toLocaleString(), width / 2, 28, {
+      font: `900 22px ${GAME_FONT}`,
+      fillStyle: "#fff",
+      align: "center",
+      baseline: "middle",
+    });
+
+    // 准确率
+    drawText(this.ctx, `${s.accuracy.toFixed(2)}%`, width - 16, 28, {
+      font: `700 14px ${GAME_FONT}`,
+      fillStyle: "rgba(255,255,255,0.72)",
+      align: "right",
+      baseline: "middle",
+    });
+
+    // combo
+    if (s.combo > 0) {
+      drawText(this.ctx, `${s.combo}x`, 16, 28, {
+        font: `900 18px ${GAME_FONT}`,
+        fillStyle: comboColor,
+        align: "left",
+        baseline: "middle",
+      });
+    }
+
+    // 模式标签
+    if (opts?.modeLabel && opts.modeColor) {
+      drawText(this.ctx, opts.modeLabel, 16, this.ctx.height - 20, {
+        font: `800 12px ${GAME_FONT}`,
+        fillStyle: opts.modeColor,
+        align: "left",
+        baseline: "middle",
+      });
+    }
+
+    // 判定计数（小）
+    const j = s.judgements;
+    const jx = width - 12;
+    const jy = 66;
+    drawText(this.ctx, `${j["300"]}`, jx, jy, { font: `700 12px ${GAME_FONT}`, fillStyle: "#66cc44", align: "right" });
+    drawText(this.ctx, `${j["100"]}`, jx, jy + 16, { font: `700 12px ${GAME_FONT}`, fillStyle: "#0a84ff", align: "right" });
+    drawText(this.ctx, `${j["50"]}`, jx, jy + 32, { font: `700 12px ${GAME_FONT}`, fillStyle: "#ff9100", align: "right" });
+    drawText(this.ctx, `${j.miss}`, jx, jy + 48, { font: `700 12px ${GAME_FONT}`, fillStyle: "#ff375f", align: "right" });
   }
 
   /** 清屏并绘制基础背景 */
@@ -310,6 +506,9 @@ export abstract class GameEngine {
 
   /** 重启时重置子类内部状态 */
   protected resetState(): void {
+    this.activeIndex = 0;
+    this.hitEffects = [];
+    this.judgePopups = [];
     for (const obj of this.beatmap.hitObjects) {
       obj.judged = false;
       obj.judgement = null;
