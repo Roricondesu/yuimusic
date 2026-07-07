@@ -42,10 +42,7 @@ function urlFromBlob(blob?: Blob): string | undefined {
 }
 
 export async function saveDownload(set: LoadedBeatmapSet): Promise<void> {
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAME, "readwrite");
-  const store = tx.objectStore(STORE_NAME);
-
+  // 先提取所有 Blob，再开启事务，避免 await 期间事务自动结束
   const [audioBlob, backgroundBlob, coverBlob] = await Promise.all([
     blobFromUrl(set.audioUrl),
     set.backgroundUrl ? blobFromUrl(set.backgroundUrl) : Promise.resolve(undefined),
@@ -59,11 +56,16 @@ export async function saveDownload(set: LoadedBeatmapSet): Promise<void> {
     coverBlob,
   };
 
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAME, "readwrite");
+  const store = tx.objectStore(STORE_NAME);
+
   return new Promise((resolve, reject) => {
     const req = store.put(stored);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve();
     tx.oncomplete = () => db.close();
+    tx.onerror = () => reject(tx.error);
   });
 }
 
