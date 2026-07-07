@@ -6,7 +6,7 @@
  */
 import type { HitObject, ParsedBeatmap, Judgement } from "@/types";
 import { GameEngine } from "../GameEngine";
-import { drawCircle, drawRing, drawText, drawRect, clamp, lerp, GAME_FONT, hexToRgba } from "../renderer/Canvas2D";
+import { drawCircle, drawRing, drawText, drawRect, drawGlassCircle, clamp, lerp, GAME_FONT, hexToRgba } from "../renderer/Canvas2D";
 
 const OSU_W = 512;
 const OSU_H = 384;
@@ -14,6 +14,8 @@ const CIRCLE_BASE_R = 34;
 
 const COMBO_COLORS = ["#f472b6", "#38bdf8", "#4ade80", "#fbbf24", "#a78bfa", "#fb7185", "#22d3ee", "#facc15"];
 const MODE_COLOR = "#f472b6";
+
+const GLASS_ALPHA = 0.45;
 
 const arToPreempt = (ar: number): number => {
   if (ar < 5) return 1200 + 600 * (5 - ar) / 5;
@@ -150,6 +152,8 @@ export class StandardEngine extends GameEngine {
           obj.judged = true;
           obj.judgement = "300";
           this.submitJudgement("300");
+          const p = this.toCanvas(obj.x, obj.y);
+          this.spawnHitEffect(p.x, p.y, "300", time);
         } else {
           obj.judged = true;
           obj.judgement = "miss";
@@ -163,16 +167,6 @@ export class StandardEngine extends GameEngine {
     this.pruneHitEffects(time);
   }
 
-  private advanceActiveIndex(time: number): void {
-    const objs = this.beatmap.hitObjects;
-    const len = objs.length;
-    while (this.activeIndex < len) {
-      const obj = objs[this.activeIndex];
-      if (!obj.judged && time - (obj.endTime || obj.time) < this.windows["50"] + 200) break;
-      this.activeIndex++;
-    }
-  }
-
   private autoPlay(time: number): void {
     const objs = this.beatmap.hitObjects;
     const len = objs.length;
@@ -181,18 +175,32 @@ export class StandardEngine extends GameEngine {
     let targetY = this.cursorTargetY;
     for (let i = this.activeIndex; i < len; i++) {
       const obj = objs[i];
-      if (obj.judged || obj.type === "spinner") continue;
+      if (obj.judged) continue;
       const delta = time - obj.time;
       if (delta < -win300) break;
+
+      if (obj.type === "spinner") {
+        const cx = this.ctx.width / 2, cy = this.ctx.height / 2;
+        this.spinnerRotation += 0.6;
+        if (this.spinnerRotation > 10) {
+          this.judgeHit(obj, time);
+          this.spawnHitEffect(cx, cy, "300", time);
+          this.spinnerRotation = 0;
+        }
+        targetX = cx + Math.cos(time / 80) * 60;
+        targetY = cy + Math.sin(time / 80) * 60;
+        break;
+      }
+
       const p = this.toCanvas(obj.x, obj.y);
       targetX = p.x;
       targetY = p.y;
       if (delta <= win300) {
         if (obj.type === "slider") {
+          // auto 模式下持续跟随滑条直到结束
           obj._sliderHit = true;
-          obj.judged = true;
-          obj.judgement = "300";
-          this.submitJudgement("300");
+          obj.judged = false;
+          this.spawnHitEffect(p.x, p.y, "300", time);
         } else {
           this.judgeHit(obj, time);
         }
@@ -200,34 +208,10 @@ export class StandardEngine extends GameEngine {
       }
       break;
     }
-    const spinner = this.findActiveSpinner(time);
-    if (spinner) {
-      const cx = this.ctx.width / 2, cy = this.ctx.height / 2;
-      this.spinnerRotation += 0.6;
-      if (this.spinnerRotation > 10) {
-        this.judgeHit(spinner, time);
-        this.spawnHitEffect(cx, cy, "300", time);
-        this.spinnerRotation = 0;
-      }
-      targetX = cx + Math.cos(time / 80) * 60;
-      targetY = cy + Math.sin(time / 80) * 60;
-    }
     this.cursorTargetX = targetX;
     this.cursorTargetY = targetY;
   }
 
-  private findActiveSpinner(time: number): HitObject | null {
-    const objs = this.beatmap.hitObjects;
-    const len = objs.length;
-    for (let i = this.activeIndex; i < len; i++) {
-      const obj = objs[i];
-      if (obj.type !== "spinner") continue;
-      if (obj.judged) continue;
-      if (time >= obj.time && time <= (obj.endTime || obj.time)) return obj;
-      if (obj.time > time) break;
-    }
-    return null;
-  }
 
   protected render(): void {
     this.clearScreen();
@@ -279,7 +263,7 @@ export class StandardEngine extends GameEngine {
     }
 
     // 主体圆 - 半透明毛玻璃感
-    drawCircle(this.ctx, p.x, p.y, r, hexToRgba(color, 0.45), "rgba(255,255,255,0.7)", 2);
+    drawGlassCircle(this.ctx, p.x, p.y, r, hexToRgba(color, GLASS_ALPHA), "rgba(255,255,255,0.7)", 2);
     // 内圈
     drawCircle(this.ctx, p.x, p.y, r * 0.55, hexToRgba(color, 0.7));
     // 中心点
@@ -320,12 +304,12 @@ export class StandardEngine extends GameEngine {
     ctx.strokeStyle = hexToRgba(color, 0.32);
     ctx.stroke();
     ctx.lineWidth = r * 1.7;
-    ctx.strokeStyle = hexToRgba(color, 0.55);
+    ctx.strokeStyle = hexToRgba(color, GLASS_ALPHA);
     ctx.stroke();
     ctx.restore();
 
-    // 头部圆
-    drawCircle(this.ctx, pts[0].x, pts[0].y, r, hexToRgba(color, 0.42), "rgba(255,255,255,0.7)", 2);
+    // 头部圆 - 半透明毛玻璃
+    drawGlassCircle(this.ctx, pts[0].x, pts[0].y, r, hexToRgba(color, GLASS_ALPHA), "rgba(255,255,255,0.7)", 2);
     drawCircle(this.ctx, pts[0].x, pts[0].y, r * 0.12, "rgba(255,255,255,0.9)");
     drawText(this.ctx, String(c.comboNumber), pts[0].x, pts[0].y - 1, {
       font: `800 ${Math.max(12, Math.round(r * 0.85))}px ${GAME_FONT}`,
@@ -336,7 +320,7 @@ export class StandardEngine extends GameEngine {
 
     // 尾部圆
     const tail = pts[pts.length - 1];
-    drawCircle(this.ctx, tail.x, tail.y, r, hexToRgba(color, 0.25), "rgba(255,255,255,0.4)", 2);
+    drawGlassCircle(this.ctx, tail.x, tail.y, r, hexToRgba(color, 0.25), "rgba(255,255,255,0.4)", 2);
 
     // approach circle
     if (timeUntil > 0) {
@@ -348,7 +332,7 @@ export class StandardEngine extends GameEngine {
     }
 
     // 滑条球
-    if (started && !obj.judged) {
+    if (started) {
       const sd = c.sliderDuration || 1;
       const slides = obj.slides || 1;
       const progressRaw = (time - obj.time) / sd;
@@ -433,10 +417,14 @@ export class StandardEngine extends GameEngine {
       if (obj.time - time > this.preempt) break;
     }
     if (best) {
+      if (best.type === "slider") {
+        best._sliderHit = true;
+        // 不立即判定，滑条尾超时再判定
+        return;
+      }
       const j = this.judgeHit(best, time);
       const p = this.toCanvas(best.x, best.y);
       this.spawnHitEffect(p.x, p.y, j, time);
-      if (best.type === "slider") best._sliderHit = true;
     }
   }
 
@@ -449,7 +437,7 @@ export class StandardEngine extends GameEngine {
   };
 
   public onKeyDown(key: string): void {
-    if (key === "x" || key === "X" || key === "z" || key === "Z") {
+    if (key === "x" || key === "X" || key === "z" || key === "Z" || key === " ") {
       if (this.lastPointer) this.onPointerDown(this.lastPointer.x, this.lastPointer.y);
       else this.onPointerDown(this.ctx.width / 2, this.ctx.height / 2);
     }

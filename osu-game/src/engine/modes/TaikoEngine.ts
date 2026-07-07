@@ -1,167 +1,241 @@
-/** osu!taiko 引擎
- *  - 红（Don）和蓝（Katsu）音符从右向左移动
- *  - 到达判定圈时按对应键击中
- *  - 圈/长条两种类型
+/** osu!taiko 引擎 - 扁平现代视觉
+ *  - 红（Don）蓝（Katsu）纯色圆
+ *  - 横屏：音符水平飞入判定圈
+ *  - 竖屏：音符垂直下落判定圈
+ *  - 性能：活动物件指针
  */
-import type { HitObject, ParsedBeatmap } from "@/types";
+import type { HitObject, ParsedBeatmap, Judgement } from "@/types";
 import { GameEngine } from "../GameEngine";
-import { drawCircle, drawRect, drawText, GAME_FONT, hexToRgba } from "../renderer/Canvas2D";
+import { drawCircle, drawRect, drawRing, drawText, clamp, GAME_FONT } from "../renderer/Canvas2D";
 
-const NOTE_R = 32;
-const JUDGE_X_RATIO = 0.18; // 判定圈位置（屏幕宽度的 18%）
-const APPROACH_TIME = 1500; // 音符提前 1.5s 出现
+const NOTE_R = 36;
+const APPROACH_TIME = 1500;
+
+const COLOR_RED = "#f87171";
+const COLOR_BLUE = "#60a5fa";
+const COLOR_GOLD = "#facc15";
+const MODE_COLOR = "#fbbf24";
 
 export class TaikoEngine extends GameEngine {
-  private judgeX = 0;
-  private cy = 0;
+  private judgePos = 0;
+  private crossPos = 0;
+  private isHorizontalFlow = true;
 
   constructor(opts: {
     canvas: HTMLCanvasElement;
     audio: HTMLAudioElement;
     beatmap: ParsedBeatmap;
     offset?: number;
+    isLandscape?: boolean;
     callbacks?: import("../GameEngine").EngineCallbacks;
+    backgroundUrl?: string;
+    auto?: boolean;
+    showCursor?: boolean;
   }) {
     super(opts);
-    this.cy = (this.ctx.height - 60) / 2 + 30;
-    this.judgeX = this.ctx.width * JUDGE_X_RATIO;
+    this.computeLayout();
+  }
+
+  protected onLayoutChange(): void { this.computeLayout(); }
+
+  private computeLayout(): void {
+    const { width, height } = this.ctx;
+    this.isHorizontalFlow = this.isLandscape;
+    if (this.isHorizontalFlow) {
+      this.judgePos = width * 0.2;
+      this.crossPos = height / 2;
+    } else {
+      this.judgePos = height * 0.78;
+      this.crossPos = width / 2;
+    }
   }
 
   private isBlue(obj: HitObject): boolean {
-    // 用 hitSound 字段无法直接判断，简化：偶数时间 = 蓝，奇数时间 = 红
-    // 真实 osu! 是按 hitSound 4 = 蓝
-    // 这里用 newCombo 简化区分
+    const hs = obj.hitSound || 0;
+    if (hs & 2) return true;
+    if (hs & 4) return true;
     return !!obj.newCombo;
   }
 
-  /** 音符当前 X 坐标（从右向左移动） */
-  private noteX(obj: HitObject, time: number): number {
+  private isBig(obj: HitObject): boolean {
+    return ((obj.hitSound || 0) & 2) !== 0;
+  }
+
+  private noteFlow(obj: HitObject, time: number): number {
     const dt = obj.time - time;
-    return this.judgeX + dt / APPROACH_TIME * (this.ctx.width - this.judgeX);
+    if (this.isHorizontalFlow) {
+      const startX = this.ctx.width + NOTE_R;
+      return this.judgePos + (dt / APPROACH_TIME) * (startX - this.judgePos);
+    } else {
+      const startY = -NOTE_R;
+      return this.judgePos - (dt / APPROACH_TIME) * (this.judgePos - startY);
+    }
   }
 
   protected update(time: number): void {
-    for (const obj of this.beatmap.hitObjects) {
+    this.advanceActiveIndex(time);
+    const objs = this.beatmap.hitObjects;
+    const len = objs.length;
+    const win50 = this.windows["50"];
+    for (let i = this.activeIndex; i < len; i++) {
+      const obj = objs[i];
       if (obj.judged) continue;
-      // 超过判定窗口 → miss
-      const delta = time - obj.time;
-      if (delta > this.windows["50"]) {
+      if (time - obj.time > win50) {
         obj.judged = true;
         obj.judgement = "miss";
         this.submitJudgement("miss");
+      } else {
+        break;
       }
     }
+    if (this.auto) this.autoPlay(time);
+    this.pruneHitEffects(time);
+  }
+
+  private autoPlay(time: number): void {
+    const win300 = this.windows["300"];
+    const best = this.findHitTarget(
+      time,
+      () => true,
+      (obj) => Math.abs(time - obj.time),
+    );
+    if (best && Math.abs(time - best.time) <= win300) {
+      this.tryHit(this.isBlue(best));
+    }
+    const x = this.isHorizontalFlow ? this.judgePos : this.crossPos;
+    const y = this.isHorizontalFlow ? this.crossPos : this.judgePos;
+    this.cursorTargetX = x;
+    this.cursorTargetY = y;
   }
 
   protected render(): void {
     this.clearScreen();
-    const time = this.getCurrentTime();
-    const { ctx } = this.ctx;
+    const time = this.currentTime;
+    this.drawTrack();
 
-    // 横向轨道
-    drawRect(this.ctx, 0, this.cy - NOTE_R - 8, this.ctx.width, (NOTE_R + 8) * 2, "rgba(0,0,0,0.4)");
-
-    // 判定圈
-    drawRing2(ctx, this.judgeX, this.cy, NOTE_R + 6, "rgba(255,255,255,0.5)", 4);
-    drawRing2(ctx, this.judgeX, this.cy, NOTE_R, "rgba(255,255,255,0.8)", 3);
-
-    // 绘制可见音符
-    for (const obj of this.beatmap.hitObjects) {
+    const objs = this.beatmap.hitObjects;
+    for (let i = objs.length - 1; i >= this.activeIndex; i--) {
+      const obj = objs[i];
       if (obj.judged && obj.judgement !== "miss") continue;
       const dt = obj.time - time;
       if (dt > APPROACH_TIME) continue;
-      if (dt < -300 && obj.judged) continue;
-
-      const x = this.noteX(obj, time);
-      const blue = this.isBlue(obj);
-
-      if (obj.type === "slider" || obj.type === "hold") {
-        // 长条音符
-        const endX = this.noteX(
-          { ...obj, time: obj.endTime || obj.time + 500 },
-          time,
-        );
-        const minX = Math.min(x, endX);
-        const maxX = Math.max(x, endX);
-        drawRect(
-          this.ctx,
-          minX,
-          this.cy - NOTE_R / 2,
-          maxX - minX,
-          NOTE_R,
-          blue ? hexToRgba("#3aa3ff", 0.85) : hexToRgba("#ff5544", 0.85),
-          NOTE_R / 2,
-        );
-        // 头尾圆
-        drawCircle(this.ctx, x, this.cy, NOTE_R / 2, blue ? "#3aa3ff" : "#ff5544");
-        drawCircle(this.ctx, endX, this.cy, NOTE_R / 2, blue ? "#3aa3ff" : "#ff5544");
-      } else {
-        drawCircle(
-          this.ctx,
-          x,
-          this.cy,
-          NOTE_R,
-          blue ? "#3aa3ff" : "#ff5544",
-          "#fff",
-          3,
-        );
-        drawCircle(this.ctx, x, this.cy, NOTE_R * 0.4, "rgba(255,255,255,0.7)");
-      }
+      if (dt < -350 && obj.judged) continue;
+      const pos = this.noteFlow(obj, time);
+      const x = this.isHorizontalFlow ? pos : this.crossPos;
+      const y = this.isHorizontalFlow ? this.crossPos : pos;
+      this.drawNote(x, y, obj, time);
     }
 
-    this.drawHUD();
+    this.drawJudgeCircle();
+    this.drawTapZones();
+    this.drawHitEffects(time);
+    this.drawJudgePopups(time);
+    this.drawHUD({ comboColor: MODE_COLOR, modeLabel: "osu!taiko", modeColor: MODE_COLOR });
   }
 
-  private drawHUD(): void {
-    const score = this.score;
-    drawText(this.ctx, `${Math.round(score.score).toLocaleString()}`, this.ctx.width / 2, 28, {
-      font: `bold 22px ${GAME_FONT}`,
-      fillStyle: "#fff",
-    });
-    drawText(this.ctx, `${score.accuracy.toFixed(2)}%`, this.ctx.width - 16, 28, {
-      font: `600 14px ${GAME_FONT}`,
-      fillStyle: "rgba(255,255,255,0.7)",
-      align: "right",
-    });
-    if (score.combo > 0) {
-      drawText(this.ctx, `${score.combo}x`, this.judgeX, this.cy - NOTE_R - 24, {
-        font: `bold 18px ${GAME_FONT}`,
-        fillStyle: "#ffaa00",
+  /** 毛玻璃 Tap 区域 */
+  private drawTapZones(): void {
+    const { ctx, width, height } = this.ctx;
+    const drawGlass = (x: number, y: number, w: number, h: number, label: string, color: string) => {
+      // 半透明面板
+      drawRect(this.ctx, x, y, w, h, "rgba(255,255,255,0.08)", 18);
+      // 边框
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x + 0.75, y + 0.75, w - 1.5, h - 1.5);
+      // 顶部高光
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      ctx.beginPath();
+      ctx.roundRect(x + 4, y + 4, w - 8, h * 0.35, [12, 12, 8, 8]);
+      ctx.fill();
+      // 标签
+      drawText(this.ctx, label, x + w / 2, y + h / 2, {
+        font: `900 14px ${GAME_FONT}`,
+        fillStyle: color,
       });
+    };
+
+    const margin = 12;
+    if (this.isHorizontalFlow) {
+      const w = width / 2 - margin * 1.5;
+      const h = NOTE_R * 2 + 36;
+      const y = this.crossPos - h / 2;
+      drawGlass(margin, y, w, h, "DON", COLOR_RED);
+      drawGlass(width / 2 + margin / 2, y, w, h, "KATSU", COLOR_BLUE);
+    } else {
+      const h = height / 2 - margin * 1.5;
+      const w = NOTE_R * 2 + 36;
+      const x = this.crossPos - w / 2;
+      drawGlass(x, margin, w, h, "DON", COLOR_RED);
+      drawGlass(x, height / 2 + margin / 2, w, h, "KATSU", COLOR_BLUE);
     }
+  }
+
+  private drawTrack(): void {
+    const { width, height } = this.ctx;
+    if (this.isHorizontalFlow) {
+      drawRect(this.ctx, 0, this.crossPos - NOTE_R - 10, width, (NOTE_R + 10) * 2, "rgba(255,255,255,0.04)", 0);
+      this.ctx.ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      this.ctx.ctx.lineWidth = 1;
+      this.ctx.ctx.strokeRect(0, this.crossPos - NOTE_R - 10, width, (NOTE_R + 10) * 2);
+    } else {
+      drawRect(this.ctx, this.crossPos - NOTE_R - 10, 0, (NOTE_R + 10) * 2, height, "rgba(255,255,255,0.04)", 0);
+      this.ctx.ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      this.ctx.ctx.lineWidth = 1;
+      this.ctx.ctx.strokeRect(this.crossPos - NOTE_R - 10, 0, (NOTE_R + 10) * 2, height);
+    }
+  }
+
+  private drawJudgeCircle(): void {
+    const x = this.isHorizontalFlow ? this.judgePos : this.crossPos;
+    const y = this.isHorizontalFlow ? this.crossPos : this.judgePos;
+    drawRing(this.ctx, x, y, NOTE_R + 10, "rgba(255,255,255,0.25)", 4);
+    drawRing(this.ctx, x, y, NOTE_R + 2, "#fff", 2);
+    drawCircle(this.ctx, x, y, NOTE_R * 0.25, "rgba(255,255,255,0.85)");
+  }
+
+  private drawNote(x: number, y: number, obj: HitObject, time: number): void {
+    const blue = this.isBlue(obj);
+    const big = this.isBig(obj);
+    const r = big ? NOTE_R * 1.28 : NOTE_R;
+    const color = blue ? COLOR_BLUE : COLOR_RED;
+    const dt = obj.time - time;
+    const alpha = clamp(1 - dt / APPROACH_TIME, 0.55, 1);
+    const { ctx } = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawCircle(this.ctx, x, y, r, color, "#fff", 3);
+    if (blue) {
+      drawCircle(this.ctx, x, y, r * 0.32, "#fff");
+    } else {
+      drawRect(this.ctx, x - r * 0.24, y - r * 0.24, r * 0.48, r * 0.48, "#fff", 2);
+    }
+    if (big) {
+      drawRing(this.ctx, x, y, r * 1.12, COLOR_GOLD, 3);
+    }
+    ctx.restore();
   }
 
   private tryHit(blue: boolean): void {
     if (this.status !== "playing") return;
-    const time = this.getCurrentTime();
-    let best: HitObject | null = null;
-    let bestDelta = Infinity;
-    for (const obj of this.beatmap.hitObjects) {
-      if (obj.judged) continue;
-      const delta = Math.abs(time - obj.time);
-      if (delta > this.windows["50"]) continue;
-      if (delta < bestDelta) {
-        bestDelta = delta;
-        best = obj;
-      }
-    }
+    const time = this.currentTime;
+    const best = this.findHitTarget(
+      time,
+      (obj) => this.isBlue(obj) === blue,
+      (obj) => Math.abs(time - obj.time),
+    );
     if (best) {
-      // 颜色必须匹配，否则视为 miss（简化版放宽：颜色错也算 50）
-      if (this.isBlue(best) === blue) {
-        this.judgeHit(best, time);
-      } else {
-        best.judged = true;
-        best.judgement = "miss";
-        this.submitJudgement("miss");
-      }
+      const j = this.judgeHit(best, time);
+      const x = this.isHorizontalFlow ? this.judgePos : this.crossPos;
+      const y = this.isHorizontalFlow ? this.crossPos : this.judgePos;
+      this.spawnHitEffect(x, y, j, time);
     }
   }
 
-  public onPointerDown(x: number, _y: number): void {
+  public onPointerDown(x: number, y: number): void {
     if (this.status !== "playing") return;
-    // 左半屏 = 红（Don），右半屏 = 蓝（Katsu）
-    const blue = x > this.ctx.width / 2;
-    this.tryHit(blue);
+    if (this.isHorizontalFlow) this.tryHit(x > this.ctx.width / 2);
+    else this.tryHit(y > this.ctx.height / 2);
   }
 
   public onPointerMove = (): void => {};
@@ -172,22 +246,5 @@ export class TaikoEngine extends GameEngine {
     if (k === "d" || k === "f") this.tryHit(false);
     else if (k === "k" || k === "j") this.tryHit(true);
   }
-
   public onKeyUp = (): void => {};
 }
-
-// 内联 ring 绘制（避免依赖导出）
-const drawRing2 = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  r: number,
-  strokeStyle: string,
-  strokeWidth: number,
-) => {
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.lineWidth = strokeWidth;
-  ctx.strokeStyle = strokeStyle;
-  ctx.stroke();
-};

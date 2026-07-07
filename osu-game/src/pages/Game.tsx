@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useGameStore } from "@/store/useGameStore";
 import { createEngine, type GameEngine, type ScoreState } from "@/engine";
 import { GlassButton } from "@/components/glass/GlassButton";
-import { RotateCcw, ArrowLeft, Pause, Play, Volume2 } from "lucide-react";
+import { RotateCcw, ArrowLeft, Pause, Play } from "lucide-react";
 import type { GameMode } from "@/types";
 import { MODE_LABEL } from "@/types";
 import { useOrientation } from "@/hooks/useOrientation";
@@ -19,6 +19,8 @@ export default function Game() {
   const downloaded = useGameStore((s) => s.downloaded);
   const volume = useGameStore((s) => s.settings.volume);
   const offset = useGameStore((s) => s.settings.offset);
+  const auto = useGameStore((s) => s.settings.auto);
+  const showCursor = useGameStore((s) => s.settings.showCursor);
   const updateRuntime = useGameStore((s) => s.updateRuntime);
   const endGame = useGameStore((s) => s.endGame);
 
@@ -60,6 +62,10 @@ export default function Game() {
         audio,
         beatmap: beatmap.parsed,
         offset,
+        isLandscape,
+        backgroundUrl: set.backgroundUrl || set.cover,
+        auto,
+        showCursor,
         callbacks: {
           onScoreUpdate: (s) => {
             setScore({ ...s });
@@ -90,7 +96,7 @@ export default function Game() {
       engineRef.current?.destroy();
       engineRef.current = null;
     };
-  }, [setId, diff, gameMode]);
+  }, [setId, diff, gameMode, isLandscape, auto, showCursor]);
 
   // 同步音量
   useEffect(() => {
@@ -138,17 +144,29 @@ export default function Game() {
       };
     };
 
+    let activePointerId: number | null = null;
+    let pointerDown = false;
+
     const onDown = (e: PointerEvent) => {
       e.preventDefault();
+      if (activePointerId === null) activePointerId = e.pointerId;
+      pointerDown = true;
       const p = getPos(e);
+      engine.setCursorPos(p.x, p.y);
       engine.onPointerDown(p.x, p.y);
     };
     const onMove = (e: PointerEvent) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
       const p = getPos(e);
-      engine.onPointerMove?.(p.x, p.y);
+      engine.setCursorPos(p.x, p.y);
+      if (pointerDown) engine.onPointerMove?.(p.x, p.y);
     };
     const onUp = (e: PointerEvent) => {
+      if (activePointerId !== null && e.pointerId !== activePointerId) return;
+      pointerDown = false;
+      activePointerId = null;
       const p = getPos(e);
+      engine.setCursorPos(p.x, p.y);
       engine.onPointerUp?.(p.x, p.y);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -205,7 +223,7 @@ export default function Game() {
   }
 
   return (
-    <div className="game-shell">
+    <div className="game-shell" style={{ width: "100%", height: "100dvh", overflow: "hidden" }}>
       <audio ref={audioRef} crossOrigin="anonymous" preload="auto" />
 
       <canvas
@@ -217,15 +235,6 @@ export default function Game() {
           touchAction: "none",
         }}
       />
-
-      {/* 竖屏提示 */}
-      <div className="rotate-hint">
-        <RotateCcw size={48} style={{ animation: "spin-slow 2s linear infinite" }} />
-        <p className="text-base font-semibold">请横屏游玩</p>
-        <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          旋转设备至横向以获得最佳体验
-        </p>
-      </div>
 
       {/* HUD 浮层（左上角控制按钮） */}
       <div

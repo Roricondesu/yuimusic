@@ -115,6 +115,8 @@ export interface HitObject {
   length?: number;
   // spinner / hold
   endTime?: number;
+  // 打击音效（Taiko 等模式用于颜色判断）
+  hitSound?: number;
   // mania 列号（解析时根据 cs 计算）
   column?: number;
   // 运行时状态

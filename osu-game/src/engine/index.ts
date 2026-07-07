@@ -13,7 +13,11 @@ export const createEngine = (
     audio: HTMLAudioElement;
     beatmap: ParsedBeatmap;
     offset?: number;
+    isLandscape?: boolean;
     callbacks?: EngineCallbacks;
+    backgroundUrl?: string;
+    auto?: boolean;
+    showCursor?: boolean;
   },
 ): GameEngine => {
   switch (mode) {

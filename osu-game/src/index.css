@@ -188,27 +188,7 @@ html.dark .glow-card::before {
   height: 100%;
 }
 
-/* 竖屏提示 */
-.rotate-hint {
-  position: fixed;
-  inset: 0;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-  background: var(--bg-base);
-  z-index: 999;
-  color: var(--text-primary);
-  text-align: center;
-  padding: 24px;
-}
 
-@media (orientation: portrait) {
-  .game-shell .rotate-hint {
-    display: flex;
-  }
-}
 
 /* 按钮：渐变发光 */
 .btn-glow {

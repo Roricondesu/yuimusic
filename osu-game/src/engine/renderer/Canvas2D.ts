@@ -126,6 +126,64 @@ export const hexToRgba = (hex: string, alpha: number): string => {
   return `rgba(${r},${g},${b},${alpha})`;
 };
 
+/** 绘制带半透明填充的圆（毛玻璃风格） */
+export const drawGlassCircle = (
+  c: CanvasContext,
+  x: number,
+  y: number,
+  r: number,
+  baseColor: string,
+  strokeColor: string = "rgba(255,255,255,0.5)",
+  lineWidth: number = 2,
+) => {
+  const { ctx } = c;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = baseColor;
+  ctx.fill();
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = strokeColor;
+  ctx.stroke();
+  ctx.restore();
+};
+
+/** 绘制带半透明填充的矩形（毛玻璃风格） */
+export const drawGlassRect = (
+  c: CanvasContext,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  fillStyle: string,
+  radius?: number,
+  strokeStyle?: string,
+  strokeWidth?: number,
+) => {
+  const { ctx } = c;
+  ctx.save();
+  if (radius) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+    if (strokeStyle && strokeWidth) {
+      ctx.lineWidth = strokeWidth;
+      ctx.strokeStyle = strokeStyle;
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = fillStyle;
+    ctx.fillRect(x, y, w, h);
+    if (strokeStyle && strokeWidth) {
+      ctx.lineWidth = strokeWidth;
+      ctx.strokeStyle = strokeStyle;
+      ctx.strokeRect(x, y, w, h);
+    }
+  }
+  ctx.restore();
+};
+
 /** 线性插值 */
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
